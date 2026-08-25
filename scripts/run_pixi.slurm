@@ -1,14 +1,14 @@
 #!/bin/bash
 #SBATCH --job-name=Cometh_growell
 #SBATCH --mail-user=gekuodza@ucdavis.edu
-#SBATCH --time=21-00:00:00
+#SBATCH --time=7-00:00:00
 #SBATCH --partition=high
 #SBATCH --ntasks=1
 #SBATCH --output=00_std_err_logs/comethyl_pearson_report.out
 #SBATCH --error=00_std_err_logs/comethyl_pearson_report.err
 #SBATCH --cpus-per-task=60
 #SBATCH --account=lasallegrp
-#SBATCH --mem=500G
+#SBATCH --mem=250G
 #SBATCH --mail-type=ALL
 #SBATCH --chdir=/quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_comethyl_George
 
@@ -45,7 +45,7 @@ OUT=$PROJECT/comethyl_output/consensus
 
 # Reference filter labels (derived from scripts 01 and 02)
 CPG_LABEL=cov3_75pct
-REGION_LABEL=covMin10_methSD0p09 #covMin14_methSD0p06 covMin10_methSD0p09
+REGION_LABEL=covMin14_methSD0p06 #covMin14_methSD0p06 covMin10_methSD0p09
 
 # # ================================================================
 # # SCRIPT 00: Import CpG reports (one per dataset)
@@ -305,29 +305,29 @@ REGION_LABEL=covMin10_methSD0p09 #covMin14_methSD0p06 covMin10_methSD0p09
 # Output: $OUT/09_consensus_modules/cov3_75pct/covMin5_methSD0p05/<adjustment_version>/
 # ================================================================
 
-# # v1
-pixi run Rscript $SCRIPTS/09_modules_consensus.R \
-  --project_root $PROJECT \
-  --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
-  --dataset1_label Baseline \
-  --dataset1_meth $OUT/07_methylation_adjustment/Baseline/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Baseline_Adjusted_Region_Methylation_allPCs.rds \
-  --dataset2_label 36-38wk \
-  --dataset2_meth $OUT/07_methylation_adjustment/36-38wk/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/36-38wk_Adjusted_Region_Methylation_allPCs.rds \
-  --dataset3_label Postpartum \
-  --dataset3_meth $OUT/07_methylation_adjustment/Postpartum/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Postpartum_Adjusted_Region_Methylation_allPCs.rds \
-  --adjustment_version v1_all_pcs \
-  --chosen_power_file $OUT/08_soft_power/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/chosen_power.txt \
-  --consensus_cor pearson \
-  --network_type signed \
-  --tom_type signed \
-  --deep_split 1 \
-  --min_module_size 10 \
-  --merge_cut_height 0.2 \
-  --max_block_size 40000 \
-  --network_calibration "single quantile" \
-  --save_consensus_toms TRUE \
-  --threads 20 \
-  --max_p_outliers 0.1
+# # # v1
+# pixi run Rscript $SCRIPTS/09_modules_consensus.R \
+#   --project_root $PROJECT \
+#   --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
+#   --dataset1_label Baseline \
+#   --dataset1_meth $OUT/07_methylation_adjustment/Baseline/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Baseline_Adjusted_Region_Methylation_allPCs.rds \
+#   --dataset2_label 36-38wk \
+#   --dataset2_meth $OUT/07_methylation_adjustment/36-38wk/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/36-38wk_Adjusted_Region_Methylation_allPCs.rds \
+#   --dataset3_label Postpartum \
+#   --dataset3_meth $OUT/07_methylation_adjustment/Postpartum/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Postpartum_Adjusted_Region_Methylation_allPCs.rds \
+#   --adjustment_version v1_all_pcs \
+#   --chosen_power_file $OUT/08_soft_power/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/chosen_power.txt \
+#   --consensus_cor pearson \
+#   --network_type signed \
+#   --tom_type signed \
+#   --deep_split 1 \
+#   --min_module_size 10 \
+#   --merge_cut_height 0.2 \
+#   --max_block_size 40000 \
+#   --network_calibration "single quantile" \
+#   --save_consensus_toms TRUE \
+#   --threads 20 \
+#   --max_p_outliers 0.1
 
 # # v2
 # pixi run Rscript $SCRIPTS/09_modules_consensus.R \
@@ -385,14 +385,14 @@ pixi run Rscript $SCRIPTS/09_modules_consensus.R \
 # FIX: --adjustment_version was v2_exclude_outcome_exposure_pcs — corrected
 # Output: $OUT/10_consensus_diagnostics/cov3_75pct/covMin5_methSD0p05/<adjustment_version>/
 # ================================================================
-# v1
-pixi run Rscript $SCRIPTS/10_diagnostics_consensus.R \
-  --project_root $PROJECT \
-  --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Consensus_Modules.rds \
-  --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
-  --adjustment_version v1_all_pcs \
-  --consensus_cor pearson \
-  --max_p_outliers 0.1
+# # v1
+# pixi run Rscript $SCRIPTS/10_diagnostics_consensus.R \
+#   --project_root $PROJECT \
+#   --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Consensus_Modules.rds \
+#   --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
+#   --adjustment_version v1_all_pcs \
+#   --consensus_cor pearson \
+#   --max_p_outliers 0.1
 
 # # v2
 # pixi run Rscript $SCRIPTS/10_diagnostics_consensus.R \
@@ -411,20 +411,20 @@ pixi run Rscript $SCRIPTS/10_diagnostics_consensus.R \
 # FIX: --dataset*_meth now includes cov3_75pct/covMin5_methSD0p05 levels
 # Output: $OUT/11_consensus_membership/cov3_75pct/covMin5_methSD0p05/<adjustment_version>/
 # ================================================================
-# v1
-pixi run Rscript $SCRIPTS/11_membership_consensus.R \
-  --project_root $PROJECT \
-  --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Consensus_Modules.rds \
-  --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
-  --dataset1_label Baseline \
-  --dataset1_meth $OUT/07_methylation_adjustment/Baseline/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Baseline_Adjusted_Region_Methylation_excluding_protected_PCs_bicor.rds \
-  --dataset2_label 36-38wk \
-  --dataset2_meth $OUT/07_methylation_adjustment/36-38wk/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/36-38wk_Adjusted_Region_Methylation_excluding_protected_PCs_bicor.rds \
-  --dataset3_label Postpartum \
-  --dataset3_meth $OUT/07_methylation_adjustment/Postpartum/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Postpartum_Adjusted_Region_Methylation_excluding_protected_PCs_bicor.rds \
-  --adjustment_version v1_all_pcs \
-  --membership_cor bicor \
-  --max_p_outliers 0.1
+# # v1
+# pixi run Rscript $SCRIPTS/11_membership_consensus.R \
+#   --project_root $PROJECT \
+#   --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Consensus_Modules.rds \
+#   --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
+#   --dataset1_label Baseline \
+#   --dataset1_meth $OUT/07_methylation_adjustment/Baseline/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Baseline_Adjusted_Region_Methylation_excluding_protected_PCs_bicor.rds \
+#   --dataset2_label 36-38wk \
+#   --dataset2_meth $OUT/07_methylation_adjustment/36-38wk/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/36-38wk_Adjusted_Region_Methylation_excluding_protected_PCs_bicor.rds \
+#   --dataset3_label Postpartum \
+#   --dataset3_meth $OUT/07_methylation_adjustment/Postpartum/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Postpartum_Adjusted_Region_Methylation_excluding_protected_PCs_bicor.rds \
+#   --adjustment_version v1_all_pcs \
+#   --membership_cor bicor \
+#   --max_p_outliers 0.1
 
 # # v2
 # pixi run Rscript $SCRIPTS/11_membership_consensus.R \
@@ -448,43 +448,43 @@ pixi run Rscript $SCRIPTS/11_membership_consensus.R \
 # FIX: added --regions_file (now required)
 # Output: $OUT/12a_me_trait_analysis/cov3_75pct/covMin5_methSD0p05/<adjustment_version>/
 # ================================================================
-# v2
-pixi run Rscript $SCRIPTS/12a_me_trait_analysis_consensus.R \
-  --project_root $PROJECT \
-  --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Consensus_Modules.rds \
-  --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
-  --adjustment_version v1_all_pcs \
-  --dataset1_label Baseline \
-  --dataset1_sample_info $DATA/sample_info_baseline.xlsx \
-  --dataset2_label 36-38wk \
-  --dataset2_sample_info $DATA/sample_info_36_38wk.xlsx \
-  --dataset3_label Postpartum \
-  --dataset3_sample_info $DATA/sample_info_postpartum.xlsx \
-  --run_bicor TRUE \
-  --run_pearson FALSE \
-  --p_thresh 0.05 \
-  --top_n 50 \
-  --module_dendro_distance bicor \
-  --max_p_outliers 0.1
+# # v1
+# pixi run Rscript $SCRIPTS/12a_me_trait_analysis_consensus.R \
+#   --project_root $PROJECT \
+#   --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Consensus_Modules.rds \
+#   --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
+#   --adjustment_version v1_all_pcs \
+#   --dataset1_label Baseline \
+#   --dataset1_sample_info $DATA/sample_info_baseline.xlsx \
+#   --dataset2_label 36-38wk \
+#   --dataset2_sample_info $DATA/sample_info_36_38wk.xlsx \
+#   --dataset3_label Postpartum \
+#   --dataset3_sample_info $DATA/sample_info_postpartum.xlsx \
+#   --run_bicor TRUE \
+#   --run_pearson FALSE \
+#   --p_thresh 0.05 \
+#   --top_n 50 \
+#   --module_dendro_distance bicor \
+#   --max_p_outliers 0.1
 
-# v2 lipids ME and some traits
-pixi run Rscript $SCRIPTS/12a_me_trait_analysis_consensus.R \
-  --project_root $PROJECT \
-  --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Consensus_Modules.rds \
-  --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
-  --adjustment_version v1_all_pcs \
-  --dataset1_label Baseline \
-  --dataset1_sample_info $DATA/Lipids_ME_traits_baseline.xlsx \
-  --dataset2_label 36-38wk \
-  --dataset2_sample_info $DATA/Lipids_ME_traits_wk36.xlsx \
-  --dataset3_label Postpartum \
-  --dataset3_sample_info $DATA/Lipids_ME_traits_postpart.xlsx \
-  --run_bicor TRUE \
-  --run_pearson FALSE \
-  --p_thresh 0.05 \
-  --top_n 50 \
-  --module_dendro_distance bicor \
-  --max_p_outliers 0.1
+# # v1 lipids ME and some traits
+# pixi run Rscript $SCRIPTS/12a_me_trait_analysis_consensus.R \
+#   --project_root $PROJECT \
+#   --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Consensus_Modules.rds \
+#   --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
+#   --adjustment_version v1_all_pcs \
+#   --dataset1_label Baseline \
+#   --dataset1_sample_info $DATA/Lipids_ME_traits_baseline.xlsx \
+#   --dataset2_label 36-38wk \
+#   --dataset2_sample_info $DATA/Lipids_ME_traits_wk36.xlsx \
+#   --dataset3_label Postpartum \
+#   --dataset3_sample_info $DATA/Lipids_ME_traits_postpart.xlsx \
+#   --run_bicor TRUE \
+#   --run_pearson FALSE \
+#   --p_thresh 0.05 \
+#   --top_n 50 \
+#   --module_dendro_distance bicor \
+#   --max_p_outliers 0.1
 
 # # v2
 # pixi run Rscript $SCRIPTS/12a_me_trait_analysis_consensus.R \
@@ -532,39 +532,22 @@ pixi run Rscript $SCRIPTS/12a_me_trait_analysis_consensus.R \
 # FIX: --dataset*_stats_file now includes cov3_75pct/covMin5_methSD0p05 levels
 # Output: $OUT/12b_me_trait_presentation/cov3_75pct/covMin5_methSD0p05/<adjustment_version>/
 # ================================================================
-# v2
-pixi run Rscript $SCRIPTS/12b_me_trait_presentation_consensus.R \
-  --project_root $PROJECT \
-  --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Consensus_Modules.rds \
-  --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
-  --adjustment_version v1_all_pcs \
-  --dataset1_label Baseline \
-  --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
-  --dataset2_label 36-38wk \
-  --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
-  --dataset3_label Postpartum \
-  --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
-  --set_dir $CONFIG/presentation_sets \
-  --module_dendro_distance bicor \
-  --p_thresh 0.05 \
-  --top_n 50 \
-  --full_width 12 \
-  --full_height 7 \
-  --top_width 9 \
-  --top_height 6
-
-# # v2
+# # v1
 # pixi run Rscript $SCRIPTS/12b_me_trait_presentation_consensus.R \
 #   --project_root $PROJECT \
-#   --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/Consensus_Modules.rds \
+#   --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Consensus_Modules.rds \
 #   --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
-#   --adjustment_version v2_exclude_protected_pcs \
+#   --adjustment_version v1_all_pcs \
 #   --dataset1_label Baseline \
-#   --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+#   --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
 #   --dataset2_label 36-38wk \
-#   --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+#   --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
 #   --dataset3_label Postpartum \
-#   --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+#   --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+#   --module_order_mode exposure_outcome \
+#   --module_order_trait_file $CONFIG/exposure_outcome_traits.tsv \
+#   --trait_order_mode exposure_outcome \
+#   --module_dendro_distance bicor \
 #   --set_dir $CONFIG/presentation_sets \
 #   --module_dendro_distance bicor \
 #   --p_thresh 0.05 \
@@ -574,19 +557,91 @@ pixi run Rscript $SCRIPTS/12b_me_trait_presentation_consensus.R \
 #   --top_width 9 \
 #   --top_height 6
 
+# v2
+pixi run Rscript $SCRIPTS/12b_me_trait_presentation_consensus.R \
+  --project_root $PROJECT \
+  --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/Consensus_Modules.rds \
+  --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
+  --adjustment_version v2_exclude_protected_pcs \
+  --dataset1_label Baseline \
+  --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --dataset2_label 36-38wk \
+  --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --dataset3_label Postpartum \
+  --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --set_dir $CONFIG/presentation_sets \
+  --module_order_mode exposure_outcome \
+  --module_order_trait_file /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_comethyl_George/config/module_ordering/exposure_outcome_traits.tsv \
+  --trait_order_mode exposure_outcome \
+  --module_dendro_distance bicor \
+  --min_sig_traits 1 \
+  --p_thresh 0.05 \
+  --top_n 50 \
+  --full_width 12 \
+  --full_height 7 \
+  --top_width 9 \
+  --top_height 6
+
+# ================================================================
+# SCRIPT 12C: Exposure-first presentation dot plots
+#
+# NEW: builds exposure-robust module list (same exposure trait
+#      nominally significant in >=2 timepoints, consistent direction),
+#      then renders EXPOSURES-only, OUTCOMES-only, and COMBINED dot
+#      plots sharing that same module list/row order.
+# Output: $OUT/12c_me_trait_exposure_first_dotplots/$CPG_LABEL/$REGION_LABEL/<adjustment_version>/
+# ================================================================
+#old version commented out below in 12c script
+# # v2
+# pixi run Rscript $SCRIPTS/12c_me_trait_exposure_first_dotplots_consensus.R \
+#   --project_root $PROJECT \
+#   --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
+#   --adjustment_version v2_exclude_protected_pcs \
+#   --dataset1_label Baseline \
+#   --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+#   --dataset2_label 36-38wk \
+#   --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+#   --dataset3_label Postpartum \
+#   --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+#   --exposure_outcome_trait_file /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_comethyl_George/config/module_ordering/exposure_outcome_traits.tsv \
+#   --p_thresh 0.05 \
+#   --min_timepoints_replicated 2 \
+#   --require_consistent_direction TRUE \
+#   --drop_empty_columns TRUE \
+#   --color_limit 0.6
+
+# v2
+pixi run Rscript /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_comethyl_George/scripts/comethyl_scripts/consensus/12c_me_trait_exposure_first_dotplots_consensus.R \
+  --project_root $PROJECT \
+  --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
+  --adjustment_version v2_exclude_protected_pcs \
+  --dataset1_label Baseline \
+  --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --dataset2_label 36-38wk \
+  --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --dataset3_label Postpartum \
+  --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --exposure_outcome_trait_file /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_comethyl_George/config/module_ordering/exposure_outcome_traits.tsv \
+  --p_thresh 0.05 \
+  --min_timepoints_replicated 2 \
+  --require_consistent_direction FALSE \
+  --drop_empty_columns TRUE \
+  --color_limit 0.6 \
+  --panel_layout horizontal \
+  --per_timepoint_plots TRUE
 # ================================================================
 # SCRIPT 13: Circos plots and module summaries
 
 # Output: $OUT/13_circos_and_module_summaries/cov3_75pct/covMin5_methSD0p05/<adjustment_version>/
 # ================================================================
-# v2
-pixi run Rscript $SCRIPTS/13_circos_plots_consensus.R \
-  --project_root $PROJECT \
-  --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Consensus_Modules.rds \
-  --consensus_regions_tsv $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Consensus_Region_Assignments.tsv \
-  --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
-  --adjustment_version v1_all_pcs \
-  --genome hg38
+# # v1
+# pixi run Rscript $SCRIPTS/13_circos_plots_consensus.R \
+#   --project_root $PROJECT \
+#   --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Consensus_Modules.rds \
+#   --consensus_regions_tsv $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Consensus_Region_Assignments.tsv \
+#   --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
+#   --adjustment_version v1_all_pcs \
+#   --genome hg38
 
 # # v2
 # pixi run Rscript $SCRIPTS/13_circos_plots_consensus.R \
@@ -602,25 +657,25 @@ pixi run Rscript $SCRIPTS/13_circos_plots_consensus.R \
 
 # Output: $OUT/14_me_trait_pair_plots/cov3_75pct/covMin5_methSD0p05/<adjustment_version>/
 # ================================================================
-# v2
-pixi run Rscript $SCRIPTS/14_me_trait_pair_plots_consensus.R \
-  --project_root $PROJECT \
-  --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Consensus_Modules.rds \
-  --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
-  --adjustment_version v1_all_pcs \
-  --dataset1_label Baseline \
-  --dataset1_sample_info $DATA/sample_info_baseline.xlsx \
-  --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
-  --dataset2_label 36-38wk \
-  --dataset2_sample_info $DATA/sample_info_36_38wk.xlsx \
-  --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
-  --dataset3_label Postpartum \
-  --dataset3_sample_info $DATA/sample_info_postpartum.xlsx \
-  --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
-  --set_dir $CONFIG/presentation_sets \
-  --cat_plot_style violin \
-  --only_significant TRUE \
-  --p_thresh 0.05
+# # v1
+# pixi run Rscript $SCRIPTS/14_me_trait_pair_plots_consensus.R \
+#   --project_root $PROJECT \
+#   --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Consensus_Modules.rds \
+#   --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
+#   --adjustment_version v1_all_pcs \
+#   --dataset1_label Baseline \
+#   --dataset1_sample_info $DATA/sample_info_baseline.xlsx \
+#   --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+#   --dataset2_label 36-38wk \
+#   --dataset2_sample_info $DATA/sample_info_36_38wk.xlsx \
+#   --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+#   --dataset3_label Postpartum \
+#   --dataset3_sample_info $DATA/sample_info_postpartum.xlsx \
+#   --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+#   --set_dir $CONFIG/presentation_sets \
+#   --cat_plot_style violin \
+#   --only_significant TRUE \
+#   --p_thresh 0.05
 
 # # v2
 # pixi run Rscript $SCRIPTS/14_me_trait_pair_plots_consensus.R \
@@ -647,13 +702,13 @@ pixi run Rscript $SCRIPTS/14_me_trait_pair_plots_consensus.R \
 
 # Output: $OUT/15_module_annotation/cov3_75pct/covMin5_methSD0p05/<adjustment_version>/
 # ================================================================
-# v1
-pixi run Rscript $SCRIPTS/15_Annotate_modules_consensus.R \
-  --project_root $PROJECT \
-  --consensus_regions_tsv $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Consensus_Region_Assignments.tsv \
-  --adjustment_version v1_all_pcs \
-  --genome hg38 \
-  --annotation_mode auto
+# # v1
+# pixi run Rscript $SCRIPTS/15_Annotate_modules_consensus.R \
+#   --project_root $PROJECT \
+#   --consensus_regions_tsv $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/Consensus_Region_Assignments.tsv \
+#   --adjustment_version v1_all_pcs \
+#   --genome hg38 \
+#   --annotation_mode auto
 
 # # v2
 # pixi run Rscript $SCRIPTS/15_Annotate_modules_consensus.R \
@@ -668,29 +723,29 @@ pixi run Rscript $SCRIPTS/15_Annotate_modules_consensus.R \
 
 # Output: $OUT/16_enrichment/cov3_75pct/covMin5_methSD0p05/<adjustment_version>/
 # ================================================================
-# v1
-pixi run Rscript $SCRIPTS/16_enrichr_selected_modules.R \
-  --project_root $PROJECT \
-  --annotation_dir $OUT/15_module_annotation/$CPG_LABEL/$REGION_LABEL/v1_all_pcs \
-  --adjustment_version v1_all_pcs \
-  --trait_list_file $CONFIG/presentation_sets \
-  --dataset1_label Baseline \
-  --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
-  --dataset2_label 36-38wk \
-  --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
-  --dataset3_label Postpartum \
-  --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
-  --p_thresh 0.05 \
-  --use_enrichr_background FALSE \
-  --enrichr_retries 5 \
-  --enrichr_sleep 2 \
-  --do_kegg FALSE \
-  --do_go FALSE \
-  --do_reactome FALSE \
-  --do_enrichr TRUE \
-  --plot_top_n 10 \
-  --plot_p_col p.adjust \
-  --plot_sig_cutoff 0.05
+# # v1
+# pixi run Rscript $SCRIPTS/16_enrichr_selected_modules.R \
+#   --project_root $PROJECT \
+#   --annotation_dir $OUT/15_module_annotation/$CPG_LABEL/$REGION_LABEL/v1_all_pcs \
+#   --adjustment_version v1_all_pcs \
+#   --trait_list_file $CONFIG/presentation_sets \
+#   --dataset1_label Baseline \
+#   --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+#   --dataset2_label 36-38wk \
+#   --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+#   --dataset3_label Postpartum \
+#   --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/v1_all_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+#   --p_thresh 0.05 \
+#   --use_enrichr_background FALSE \
+#   --enrichr_retries 5 \
+#   --enrichr_sleep 2 \
+#   --do_kegg FALSE \
+#   --do_go FALSE \
+#   --do_reactome FALSE \
+#   --do_enrichr TRUE \
+#   --plot_top_n 10 \
+#   --plot_p_col p.adjust \
+#   --plot_sig_cutoff 0.05
 
 # # v2
 # pixi run Rscript $SCRIPTS/16_enrichr_selected_modules.R \
@@ -723,15 +778,15 @@ pixi run Rscript $SCRIPTS/16_enrichr_selected_modules.R \
 # NOTE: update --modules to match actual module colors from script 09
 # ================================================================
 
-# v2
-pixi run Rscript $SCRIPTS/17_core_chromatin_overlap.R \
-  --project_root $PROJECT \
-  --annotation_dir $OUT/15_module_annotation/$CPG_LABEL/$REGION_LABEL/v1_all_pcs \
-  --modules turquoise,blue,brown \
-  --reference_root $PROJECT/reference/chromatin \
-  --adjustment_version v1_all_pcs \
-  --source roadmap \
-  --download_missing TRUE
+# # v1
+# pixi run Rscript $SCRIPTS/17_core_chromatin_overlap.R \
+#   --project_root $PROJECT \
+#   --annotation_dir $OUT/15_module_annotation/$CPG_LABEL/$REGION_LABEL/v1_all_pcs \
+#   --modules turquoise,blue,brown \
+#   --reference_root $PROJECT/reference/chromatin \
+#   --adjustment_version v1_all_pcs \
+#   --source roadmap \
+#   --download_missing TRUE
 
 # # v2
 # pixi run Rscript $SCRIPTS/17_core_chromatin_overlap.R \
@@ -749,17 +804,17 @@ pixi run Rscript $SCRIPTS/17_core_chromatin_overlap.R \
 # Output: $OUT/18_regulatory_presentation/<adjustment_version>/
 # NOTE: update --modules to match actual module colors from script 09
 # ================================================================
-# v2
-pixi run Rscript $SCRIPTS/18_plot_chromatin_heatmaps.R \
-  --project_root $PROJECT \
-  --regulatory_overlap_dir $OUT/17_regulatory_overlap/v1_all_pcs \
-  --modules turquoise,blue,brown \
-  --adjustment_version v1_all_pcs \
-  --source roadmap \
-  --max_regions 50 \
-  --make_per_module_heatmaps TRUE \
-  --make_combined_heatmap TRUE \
-  --make_barplots TRUE
+# # v1
+# pixi run Rscript $SCRIPTS/18_plot_chromatin_heatmaps.R \
+#   --project_root $PROJECT \
+#   --regulatory_overlap_dir $OUT/17_regulatory_overlap/v1_all_pcs \
+#   --modules turquoise,blue,brown \
+#   --adjustment_version v1_all_pcs \
+#   --source roadmap \
+#   --max_regions 50 \
+#   --make_per_module_heatmaps TRUE \
+#   --make_combined_heatmap TRUE \
+#   --make_barplots TRUE
 
 # # v2
 # pixi run Rscript $SCRIPTS/18_plot_chromatin_heatmaps.R \

@@ -1,0 +1,65 @@
+category	trait	timepoint
+# Trait names must exactly match the renamed metadata column names.
+# Valid categories are: exposure, outcome
+# timepoint is OPTIONAL. Leave it blank for a trait that should appear in
+# every panel (fixed/baseline-measured covariates, and all outcomes below).
+# Set it to exactly match one of --dataset1_label / --dataset2_label /
+# --dataset3_label (as used in your 12c command) to restrict a repeated-
+# measures exposure to only that timepoint's panel. Based on your shell
+# commands so far, that means: Baseline, 36-38wk, Postpartum.
+exposure	low_income	
+exposure	low_access	
+exposure	SPL_SVM	
+exposure	RPL_SVM	
+exposure	SPL_EBM	
+exposure	RPL_EBM	
+exposure	F_HVM	
+exposure	RPL_HVM	
+exposure	epds_base	Baseline
+exposure	sleep_base	Baseline
+exposure	reap_base	Baseline
+exposure	KCAL_base	Baseline
+exposure	HEI2015_TOTAL_SCORE_base	Baseline
+exposure	ppaq_total_base	Baseline
+exposure	PM2.5_7Days_base	Baseline
+exposure	PM2.5_30Days_base	Baseline
+exposure	PM2.5_90Days_base	Baseline
+exposure	EH_7Days_base	Baseline
+exposure	EH_30Days_base	Baseline
+exposure	EH_90Days_base	Baseline
+exposure	sleep_wk36	36-38wk
+exposure	reap_wk36	36-38wk
+exposure	KCAL_wk36	36-38wk
+exposure	HEI2015_TOTAL_SCORE_wk36	36-38wk
+exposure	ppaq_total_wk36	36-38wk
+exposure	PM2.5_7Days_wk36	36-38wk
+exposure	PM2.5_30Days_wk36	36-38wk
+exposure	PM2.5_90Days_wk36	36-38wk
+exposure	EH_7Days_wk36	36-38wk
+exposure	EH_30Days_wk36	36-38wk
+exposure	EH_90Days_wk36	36-38wk
+exposure	rhodes_wk36	36-38wk
+exposure	epds_mth6	Postpartum
+exposure	epds_3a_mth6	Postpartum
+exposure	sleep_mth6	Postpartum
+exposure	reap_mth6	Postpartum
+exposure	KCAL_mth6	Postpartum
+exposure	HEI2015_TOTAL_SCORE_mth6	Postpartum
+exposure	ppaq_total_mth6	Postpartum
+exposure	PM2.5_7Days_mth6	Postpartum
+exposure	PM2.5_30Days_mth6	Postpartum
+exposure	PM2.5_90Days_mth6	Postpartum
+exposure	EH_7Days_mth6	Postpartum
+exposure	EH_30Days_mth6	Postpartum
+exposure	EH_90Days_mth6	Postpartum
+outcome	apo	
+outcome	apo_hdp	
+outcome	apo_gdm	
+outcome	apo_other	
+outcome	preterm	
+outcome	bmi	
+outcome	gwg	
+outcome	egwg	
+outcome	ppwr	
+outcome	ppwr_e	
+outcome	group
