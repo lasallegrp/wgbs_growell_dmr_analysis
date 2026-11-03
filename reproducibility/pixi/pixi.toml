@@ -97,6 +97,8 @@ r-showtext = ">=0.9_7,<0.10"
 r-sysfonts = ">=0.8.9,<0.9"
 bioconductor-clusterprofiler = ">=4.6.0,<5"
 bioconductor-annotationdbi = ">=1.60.0,<2"
+bioconductor-regioner = ">=1.30.0,<2"
+r-upsetr = ">=1.4.0,<2"
 
 [activation.env]
 PKG_CONFIG_PATH = "$CONDA_PREFIX/lib/pkgconfig:$CONDA_PREFIX/share/pkgconfig"

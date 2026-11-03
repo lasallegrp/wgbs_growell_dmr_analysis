@@ -432,6 +432,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/r-tweenr-2.0.3-r42ha503ecb_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/r-tzdb-0.4.0-r42ha503ecb_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/r-umap-0.2.10.0-r42ha503ecb_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/r-upsetr-1.4.0-r42hc72bb7e_4.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/r-utf8-1.2.4-r42h57805ef_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/r-uuid-1.2_0-r42h57805ef_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/r-v8-4.4.2-r42h432ea70_0.conda
@@ -917,6 +918,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-64/r-tweenr-2.0.3-r42h29979af_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/r-tzdb-0.4.0-r42hac7d2d5_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/r-umap-0.2.10.0-r42hac7d2d5_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/r-upsetr-1.4.0-r42hc72bb7e_4.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/r-utf8-1.2.4-r42hb2c329c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/r-uuid-1.2_0-r42hb2c329c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/r-v8-4.4.2-r42hf1231e2_0.conda
@@ -9717,6 +9719,19 @@ packages:
   license_family: MIT
   size: 169628
   timestamp: 1686916444665
+- conda: https://conda.anaconda.org/conda-forge/noarch/r-upsetr-1.4.0-r42hc72bb7e_4.conda
+  sha256: 57dfe5ce2d280933d2de502076300d91926383d54b24f1f0000b7230d7621cdd
+  md5: 143decd19fa5706c26f9b1c3b0a69b0e
+  depends:
+  - r-base >=4.2,<4.3.0a0
+  - r-ggplot2
+  - r-gridextra
+  - r-plyr
+  - r-scales
+  license: MIT
+  license_family: MIT
+  size: 3248220
+  timestamp: 1686888616599
 - conda: https://conda.anaconda.org/conda-forge/linux-64/r-utf8-1.2.4-r42h57805ef_0.conda
   sha256: 27c92bff7b0de286f4e6eccbbdbac5f2b1322c9195b098e49de46d0787fb827b
   md5: 1da2e3bcbf75c6ddc3466941d88ff93f
