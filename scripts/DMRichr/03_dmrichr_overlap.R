@@ -7,6 +7,7 @@
 #
 #  outcome_timepoint  (default; GROWELL layout)
 #     <results_dir>/<outcome>/<timepoint>/[<subdir>/]DMRs/DMRs_annotated.xlsx
+#     results_dir defaults to <project_dir>/results/dmrichr_output
 #     e.g. results/apo/Baseline, results/apo/36-38wk, results/apo/Postpartum
 #     Sets are discovered automatically; folders without a DMR file are skipped.
 #     set_id = <outcome>_<timepoint> (non-alphanumerics -> "_", e.g. apo_36_38wk)
@@ -44,7 +45,7 @@ opt <- parse_args(OptionParser(option_list = list(
               help = "outcome_timepoint | config_sex [default %default]"),
   # ---- outcome_timepoint layout ----
   make_option("--results_dir", type = "character", default = NA,
-              help = "Folder holding <outcome>/<timepoint>/ [default <project_dir>/results]"),
+              help = "Folder holding <outcome>/<timepoint>/ [default <project_dir>/results/dmrichr_output]"),
   make_option("--outcomes", type = "character", default = NA,
               help = "Comma list of outcome folders, in display order [default: all discovered]"),
   make_option("--timepoints", type = "character", default = NA,
@@ -141,10 +142,15 @@ stopifnot(opt$layout %in% c("outcome_timepoint", "config_sex"))
 is_ot <- opt$layout == "outcome_timepoint"
 if (is.na(opt$project_dir) && is.na(opt$manifest) && !(is_ot && !is.na(opt$results_dir)))
   stop("Give --project_dir (or --results_dir for outcome_timepoint), or --manifest")
+if (is_ot && is.na(opt$results_dir) && !is.na(opt$project_dir))
+  opt$results_dir <- file.path(opt$project_dir, "results", "dmrichr_output")
 if (is.na(opt$out_dir)) {
-  if (is.na(opt$project_dir)) stop("--out_dir is required without --project_dir")
-  opt$out_dir <- if (is_ot) file.path(opt$project_dir, "results", "DMRichR_overlap")
-                 else file.path(opt$project_dir, "results", "DMRichR_overlap_sex_stratified", opt$cutoff)
+  if (is_ot) {
+    opt$out_dir <- file.path(opt$results_dir, "DMRichR_overlap")
+  } else {
+    if (is.na(opt$project_dir)) stop("--out_dir is required without --project_dir")
+    opt$out_dir <- file.path(opt$project_dir, "results", "DMRichR_overlap_sex_stratified", opt$cutoff)
+  }
 }
 .a <- grep("^--file=", commandArgs(FALSE), value = TRUE)
 self <- if (length(.a)) normalizePath(sub("^--file=", "", .a[1])) else NA_character_
@@ -222,7 +228,6 @@ if (!is.na(opt$manifest)) {
   man <- read_manifest(opt$manifest, c("set_id", "contrast", "sex", "path"))
   config_file <- opt$manifest
 } else if (is_ot) {
-  if (is.na(opt$results_dir)) opt$results_dir <- file.path(opt$project_dir, "results")
   man <- discover_outcome_timepoint(opt$results_dir, opt$dmr_file, opt$subdir,
                                     split_opt(opt$outcomes), split_opt(opt$timepoints),
                                     split_opt(opt$exclude_dirs))

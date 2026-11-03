@@ -1,33 +1,32 @@
 #!/bin/bash
 
 # ============================================================================
-# dmr_overlap.sbatch
+# run_overlap.sbatch
 #
 # Run 03_dmrichr_overlap.R on the GROWELL outcome x timepoint layout:
-#   results/<outcome>/<timepoint>/DMRs/DMRs_annotated.xlsx
-# Sets are discovered automatically 
+#   results/dmrichr_output/<outcome>/<timepoint>/DMRs/DMRs_annotated.xlsx
+# Sets are discovered automatically (no config table needed).
 #
 # Comparisons:
 #   within_outcome_across_timepoints   e.g. egwg: Baseline / 36-38wk / Postpartum
 #   within_timepoint_across_outcomes   e.g. Baseline: egwg / ppwr / apo / ...
 # Overlap by coordinates and/or gene symbol, optional regioneR permutation test.
-# Output: results/DMRichR_overlap/<RUN_TAG>/
+# Output: results/dmrichr_output/DMRichR_overlap/<RUN_TAG>/
 #
 # Submit FROM THE PROJECT ROOT (the log paths below are relative to it):
 #   cd /quobyte/lasallegrp/projects/GROWELL/WGBS/<project>
-#   sbatch scripts/slurm/dmr_overlap.sbatch
+#   sbatch scripts/slurm/run_overlap.sbatch
 #
 # Optional overrides at submit time, e.g.:
-#   sbatch --export=ALL,OUTCOMES=egwg,ppwr,COMPARISONS=within_timepoint_across_outcomes scripts/slurm/dmr_overlap.sbatch
-#   sbatch --export=ALL,PERM_TEST=1 scripts/slurm/dmr_overlap.sbatch                       # 100 x resampleRegions
-#   sbatch --export=ALL,PERM_TEST=1,PERM_N=1000 scripts/slurm/dmr_overlap.sbatch           # final numbers
-#   sbatch --export=ALL,PERM_TEST=1,PERM_RANDOMIZE=randomize,PERM_GENOME=hg38 scripts/slurm/dmr_overlap.sbatch
-#   sbatch --export=ALL,REQUIRE_DIRECTION=1,EXCLUDE_SEX_CHR=1 scripts/slurm/dmr_overlap.sbatch
-#   sbatch --export=ALL,OVERLAP_MODE=coord,MAX_GAP=500 scripts/slurm/dmr_overlap.sbatch
-#   sbatch --export=ALL,UPSET_GENES=5 scripts/slurm/dmr_overlap.sbatch
-# sbatch --export=ALL,OUTCOMES=egwg:ppwr,COMPARISONS=within_timepoint_across_outcomes,PERM_TEST=1 \
-#        scripts/slurm/dmr_overlap.sbatch
-#
+#   sbatch --export=ALL,OUTCOMES=egwg,ppwr,COMPARISONS=within_timepoint_across_outcomes scripts/slurm/run_overlap.sbatch
+#   sbatch --export=ALL,PERM_TEST=1 scripts/slurm/run_overlap.sbatch                       # 100 x resampleRegions
+#   sbatch --export=ALL,PERM_TEST=1,PERM_N=1000 scripts/slurm/run_overlap.sbatch           # final numbers
+#   sbatch --export=ALL,PERM_TEST=1,PERM_RANDOMIZE=randomize,PERM_GENOME=hg38 scripts/slurm/run_overlap.sbatch
+#   sbatch --export=ALL,REQUIRE_DIRECTION=1,EXCLUDE_SEX_CHR=1 scripts/slurm/run_overlap.sbatch
+#   sbatch --export=ALL,OVERLAP_MODE=coord,MAX_GAP=500 scripts/slurm/run_overlap.sbatch
+#   sbatch --export=ALL,UPSET_GENES=5 scripts/slurm/run_overlap.sbatch
+#   sbatch --export=ALL,OUTCOMES=egwg:ppwr,COMPARISONS=within_timepoint_across_outcomes,PERM_TEST=1        scripts/slurm/dmr_overlap.sbatch
+#   sbatch --export=ALL,COMPARISONS=within_outcome_across_timepoints,PERM_TEST=1 scripts/slurm/dmr_overlap.sbatch
 # Note: --export values are comma-separated, so for OUTCOMES/TIMEPOINTS with
 # several entries use ":" instead of "," (e.g. OUTCOMES=egwg:ppwr); it is
 # converted below.
@@ -67,9 +66,9 @@ PROJECT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
 PROJECT_DIR="$(cd "${PROJECT_DIR}" && pwd)"
 
 SCRIPT_DIR="${SCRIPT_DIR:-${PROJECT_DIR}/scripts/DMRichr}"      # 03_dmrichr_overlap.R + helper_overlap.R
-OVERLAP_SCRIPT="/quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/scripts/DMRichr/run_in_DMRs_folder/03_dmrichr_overlap.R"
-HELPER="/quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/scripts/DMRichr/run_in_DMRs_folder/helper_overlap.R"
-RESULTS_DIR="${RESULTS_DIR:-${PROJECT_DIR}/results}"            # holds <outcome>/<timepoint>/
+OVERLAP_SCRIPT="${SCRIPT_DIR}/03_dmrichr_overlap.R"
+HELPER="${SCRIPT_DIR}/helper_overlap.R"
+RESULTS_DIR="${RESULTS_DIR:-${PROJECT_DIR}/results/dmrichr_output}"   # holds <outcome>/<timepoint>/
 
 if [[ ! -d "${RESULTS_DIR}" ]]; then
     echo "ERROR: results folder not found: ${RESULTS_DIR}" >&2
