@@ -26,6 +26,14 @@
 #  Every multi-set overlap pattern is also written to its own folder:
 #    <out_dir>/<comparison>/<group>/<coord|gene>/overlaps/<pattern>/DMRs_annotated_<pattern>.xlsx
 #
+#  GWAS integration (optional; inputs = GWAS Catalog association export):
+#    --gene_set <export.tsv>  Fisher test per set: GWAS genes among DMR genes, universe =
+#                             genes of that set's DMRichR background; association-weighted
+#                             Wilcoxon; outcomes + GWAS UpSet per group; evidence plots.
+#    --snp_set  <export.tsv>  regioneR: DMRs within --snp_window bp of GWAS SNPs vs
+#                             resampled background (candidate) regions.
+#    Outputs in <out_dir>/gwas/ and in each group's gene/ folder.
+#
 #  Example (GROWELL):
 #   Rscript 03_dmrichr_overlap.R --project_dir /quobyte/lasallegrp/projects/GROWELL/WGBS/<project> \
 #       --timepoints Baseline,36-38wk,Postpartum --overlap_mode both
@@ -135,6 +143,25 @@ opt <- parse_args(OptionParser(option_list = list(
   make_option("--perm_cores", type = "integer", default = 1L,
               help = "Cores for regioneR (parallel::mclapply) [default %default]"),
   make_option("--perm_seed", type = "integer", default = 1L, help = "Seed [default %default]"),
+  # ---- GWAS gene set / SNP set ----
+  make_option("--gene_set", type = "character", default = NA,
+              help = "GWAS Catalog association export (or gene list with geneSymbol[, n_associations]) for the gene-set test"),
+  make_option("--snp_set", type = "character", default = NA,
+              help = "GWAS Catalog association export (or table chr, pos) for the SNP-proximity regioneR test"),
+  make_option("--gwas_label", type = "character", default = "GWAS",
+              help = "Short name for the GWAS set in plots/tables [default %default]"),
+  make_option("--gwas_max_p", type = "double", default = NA,
+              help = "Keep only associations with p <= this [default: all rows in the export]"),
+  make_option("--snp_window", type = "integer", default = 50000L,
+              help = "bp around each GWAS SNP for the SNP-proximity test [default %default]"),
+  make_option("--harmonize_symbols", type = "logical", default = TRUE,
+              help = "Map GWAS and DMRichR gene symbols to current symbols via org.Hs.eg.db [default %default]"),
+  make_option("--gwas_expand_readthrough", type = "logical", default = TRUE,
+              help = "Also credit read-through GWAS genes (A-B-C) to each component gene, when every part is a current symbol [default %default]"),
+  make_option("--gwas_upset_genes", type = "integer", default = 10L,
+              help = "Gene names per bar on the outcomes + GWAS UpSet, ranked by n associations [default %default]"),
+  make_option("--gwas_plot_max", type = "integer", default = 60L,
+              help = "Max genes on the GWAS evidence plots [default %default]"),
   make_option("--helper", type = "character", default = NA, help = "Path to helper_overlap.R")
 )))
 
@@ -185,6 +212,14 @@ if (opt$perm_test) {
   if (tolower(opt$background_file) == "none")
     stop("--perm_test needs background files (the universe); remove --background_file none")
 }
+if (!is.na(opt$snp_set)) {
+  if (!requireNamespace("regioneR", quietly = TRUE))
+    stop("--snp_set needs regioneR (pixi/conda: bioconductor-regioner)")
+  if (tolower(opt$background_file) == "none") stop("--snp_set needs background files (the universe)")
+  RNGkind("L'Ecuyer-CMRG"); options(mc.cores = opt$perm_cores)
+}
+if (!is.na(opt$gene_set) && tolower(opt$background_file) == "none")
+  stop("--gene_set needs background files (the gene universe)")
 split_opt <- function(x) if (is.na(x) || !nzchar(x)) NULL else trimws(strsplit(x, ",")[[1]])
 clean_id  <- function(x) gsub("^_|_$", "", gsub("[^A-Za-z0-9]+", "_", x))
 
@@ -204,7 +239,13 @@ discover_outcome_timepoint <- function(results_dir, dmr_file, subdir, outcomes, 
   rows <- list()
   for (o in found) {
     tp <- list.dirs(file.path(results_dir, o), recursive = FALSE, full.names = FALSE)
-    if (!is.null(timepoints)) tp <- timepoints[timepoints %in% tp]
+    if (!is.null(timepoints)) {
+      extra <- setdiff(tp, timepoints)
+      if (length(extra)) message(o, ": folders not in --timepoints, skipped: ", paste(extra, collapse = ", "))
+      miss <- setdiff(timepoints, tp)
+      if (length(miss)) message(o, ": no folder for timepoint(s): ", paste(miss, collapse = ", "))
+      tp <- timepoints[timepoints %in% tp]
+    }
     for (t in tp) {
       p <- if (nzchar(subdir)) file.path(results_dir, o, t, subdir) else file.path(results_dir, o, t)
       if (file.exists(file.path(p, dmr_file))) {
@@ -215,6 +256,8 @@ discover_outcome_timepoint <- function(results_dir, dmr_file, subdir, outcomes, 
     }
   }
   if (!length(rows)) stop("No DMR sets found under ", results_dir)
+  message("Outcome folders used: ", paste(found, collapse = ", "),
+          "  (excluded: ", paste(intersect(exclude, list.dirs(results_dir, FALSE, FALSE)), collapse = ", "), ")")
   man <- do.call(rbind, rows)
   if (anyDuplicated(man$set_id)) stop("set_id collision after cleaning names: ",
                                       paste(man$set_id[duplicated(man$set_id)], collapse = ", "))
@@ -281,7 +324,8 @@ if (tolower(opt$gene_universe) == "background") {
 
 log_run_metadata(opt$out_dir, opt,
                  c(config_file, man$dmr_path, na.omit(man$bg_path), opt$groups_file,
-                   if (file.exists(opt$gene_universe)) opt$gene_universe),
+                   if (file.exists(opt$gene_universe)) opt$gene_universe,
+                   na.omit(c(opt$gene_set, opt$snp_set))),
                  self)
 sizes <- data.frame(set_id = man$set_id, contrast = man$contrast, sex = man$sex,
                     n_dmrs = vapply(dmrs, nrow, 1L),
@@ -292,6 +336,177 @@ sizes <- data.frame(set_id = man$set_id, contrast = man$contrast, sex = man$sex,
                     effect_col = vapply(dmrs, function(d) attr(d, "effect_col"), ""))
 names(sizes)[2:3] <- dim_names
 print(sizes, row.names = FALSE)
+
+# ----------------------------- GWAS gene set / SNP set -----------------------------
+user_cols <- function(d) d[, !startsWith(names(d), "."), drop = FALSE]   # (also defined below)
+gwas <- NULL; H <- identity; set_univ <- NULL; gw_label <- clean_id(opt$gwas_label)
+gs_res <- NULL; snp_res <- NULL; ev_all <- NULL
+gw_dir <- file.path(opt$out_dir, "gwas")
+dimcols <- function(s) setNames(data.frame(man$contrast[man$set_id == s], man$sex[man$set_id == s],
+                                           stringsAsFactors = FALSE), dim_names)
+gin <- NULL
+if (!is.na(opt$gene_set)) {
+  dir.create(gw_dir, recursive = TRUE, showWarnings = FALSE)
+  gin <- read_gwas_input(opt$gene_set, opt$gwas_max_p)
+  gwas <- build_gwas_gene_set(gin, opt$harmonize_symbols, opt$gwas_expand_readthrough)
+  message("\n", opt$gwas_label, " gene set: ", nrow(gwas$genes), " genes",
+          if (!is.null(gwas$long)) paste0(" from ", length(unique(gwas$long$assoc_id)), " associations, ",
+                                         length(unique(gwas$long$study)), " studies, ",
+                                         length(unique(gwas$long$trait)), " traits"))
+  # same symbol harmonization for the DMRichR genes (DMRs and backgrounds)
+  dmr_syms <- unique(c(unlist(lapply(dmrs, dmr_genes)),
+                       unlist(lapply(bgs, function(b) if (!is.null(b) && !is.null(b$gene))
+                         split_genes(b$gene, opt$gene_sep)))))
+  dmap <- symbol_map(dmr_syms, opt$harmonize_symbols)
+  H <- function(x) apply_symbol_map(x, dmap)
+  set_genes <- lapply(dmrs, function(d) unique(H(dmr_genes(d))))
+  set_univ  <- lapply(bgs, function(b) if (is.null(b) || is.null(b$gene)) NULL
+                      else unique(H(split_genes(b$gene, opt$gene_sep))))
+  set_dirs  <- lapply(dmrs, gene_dir_table, H = H)
+
+  # gene table of some DMR sets (harmonized symbols) + a GWAS column. GWAS genes are restricted
+  # to the sets' background genes; the GWAS-only bar is never drawn. If file is given, draws the
+  # UpSet: bars that include GWAS are labelled "GENE (n associations)", ranked by n associations.
+  gwas_upset <- function(sids, file = NULL, title = "", cols = NULL) {
+    sep <- if (is.na(opt$gene_sep)) NA else opt$gene_sep
+    dlh <- lapply(dmrs[sids], function(d) { d$.gene <- harmonize_gene_col(d$.gene, H, sep); d })
+    gth <- build_gene_table(dlh)
+    gg <- intersect(gwas$genes$geneSymbol, unique(unlist(set_univ[sids])))
+    if (is.null(gth) || !length(gg)) return(NULL)
+    isg <- gth$geneSymbol %in% gg
+    gth[[gw_label]] <- as.integer(isg)
+    gth[[paste0("dir_", gw_label)]] <- NA_character_
+    gth$pattern <- ifelse(isg, paste(gth$pattern, gw_label, sep = "&"), gth$pattern)
+    gth$n_sets <- gth$n_sets + isg
+    na <- gwas$genes$n_associations[match(gth$geneSymbol, gwas$genes$geneSymbol)]
+    if (!is.null(file)) {
+      alld <- do.call(rbind, lapply(dlh, function(d) d[!is.na(d$.gene), c(".gene", ".effect")]))
+      eff <- tapply(abs(alld$.effect), alld$.gene, max)[gth$geneSymbol]
+      gth$label_gene <- ifelse(isg, paste0(gth$geneSymbol, " (", na, ")"), gth$geneSymbol)
+      if (is.null(cols)) cols <- setNames(rep("grey15", length(sids)), sids)
+      plot_upset_labeled(gth, c(sids, gw_label), file,
+                         paste0(title, " (", length(gg), " ", opt$gwas_label, " genes in universe); labels: gene (n associations)"),
+                         gene_col = "label_gene", score = ifelse(isg, na, eff),
+                         n_genes = opt$gwas_upset_genes, scope = "multi", highlight = NULL,
+                         require_direction = FALSE,
+                         set_sizes = c(vapply(dlh, function(d) length(dmr_genes(d)), 1L), setNames(length(gg), gw_label)),
+                         set_cols = c(cols, setNames("#7F7F7F", gw_label)))
+    }
+    invisible(list(tab = gth, isg = isg, n_in_universe = length(gg)))
+  }
+
+  gs_res <- bind_rows_any(lapply(man$set_id, function(s) {
+    if (is.null(set_univ[[s]])) { message("  ", s, ": no background genes -> gene-set test skipped"); return(NULL) }
+    cbind(set_id = s, dimcols(s), gene_set_enrichment_one(set_genes[[s]], set_univ[[s]], gwas$genes))
+  }))
+  if (nrow(gs_res)) {
+    gs_res$fisher_FDR_run    <- p.adjust(gs_res$fisher_p, "BH")
+    gs_res$gw_fisher_FDR_run <- p.adjust(gs_res$gw_fisher_p, "BH")
+    print(gs_res[, c("set_id", "dmr_genes", "gwas_genes_in_universe", "overlap", "expected",
+                     "fisher_p", "fisher_FDR_run")], row.names = FALSE)
+  }
+  # every DMR gene (any set) that is a GWAS gene, with direction and GWAS evidence
+  ev_all <- bind_rows_any(lapply(man$set_id, function(s) {
+    x <- set_dirs[[s]]; x <- x[x$geneSymbol %in% gwas$genes$geneSymbol, ]
+    if (!nrow(x)) return(NULL)
+    cbind(set_id = s, dimcols(s), x)
+  }))
+  ov_genes <- if (nrow(ev_all)) {
+    names(ev_all)[names(ev_all) == "dir"] <- "dmr_direction"
+    merge(ev_all, gwas$genes, by = "geneSymbol", all.x = TRUE)
+  } else data.frame()
+  if (nrow(ov_genes)) ov_genes <- ov_genes[order(-ov_genes$n_associations, ov_genes$geneSymbol, ov_genes$set_id), ]
+  if (nrow(ev_all)) {
+    names(ev_all)[names(ev_all) == "dmr_direction"] <- "dir"; ev_all$set <- ev_all$set_id
+    plot_gwas_evidence(ev_all, gwas$genes, man$set_id, file.path(gw_dir, paste0(gw_label, "_gene_evidence.pdf")),
+                       paste0(opt$gwas_label, " genes among DMR genes"), opt$gwas_plot_max, opt$gwas_label,
+                       set_groups = man$contrast)
+  }
+  # outcomes + GWAS UpSets, one per outcome (across timepoints) and one per timepoint
+  # (across outcomes); written to gwas/upset/
+  udir <- file.path(gw_dir, "upset"); dir.create(udir, showWarnings = FALSE)
+  for (o in unique(man$contrast)) {
+    mg <- man[man$contrast == o, ]
+    if (nrow(mg) < 1) next
+    gwas_upset(mg$set_id, file.path(udir, paste0(clean_id(o), "_across_", dim_names[["sex"]], "s_with_", gw_label, ".pdf")),
+               paste0(o, ": DMR genes across ", dim_names[["sex"]], "s + ", opt$gwas_label, " genes"),
+               set_colours(transform(mg, contrast = sex), "custom"))
+  }
+  for (t in unique(man$sex)) {
+    mg <- man[man$sex == t, ]
+    if (nrow(mg) < 1) next
+    gwas_upset(mg$set_id, file.path(udir, paste0(clean_id(t), "_across_", dim_names[["contrast"]], "s_with_", gw_label, ".pdf")),
+               paste0(t, ": DMR genes across ", dim_names[["contrast"]], "s + ", opt$gwas_label, " genes"),
+               set_colours(mg, "within_sex_across_conditions"))
+  }
+  if (nrow(gs_res))
+    plot_gene_set_enrichment(gs_res, file.path(gw_dir, paste0(gw_label, "_gene_set_enrichment.pdf")),
+                             paste0(opt$gwas_label, " gene-set enrichment per DMR set"))
+  smap <- rbind(cbind(source = opt$gwas_label, gwas$map), cbind(source = "DMRichR", dmap))
+  write_xlsx_safe(list(Genes = gwas$genes, Trait_summary = gwas$traits,
+                       Associations = if (!is.null(gwas$long)) gin else NULL,
+                       Gene_by_association = gwas$long,
+                       Symbol_changes = smap[smap$status != "current", ]),
+                  file.path(gw_dir, paste0(gw_label, "_gene_set.xlsx")))
+  write_xlsx_safe(list(Enrichment = gs_res, DMR_genes_in_GWAS = ov_genes),
+                  file.path(gw_dir, paste0(gw_label, "_gene_set_enrichment.xlsx")))
+}
+
+if (!is.na(opt$snp_set)) {
+  dir.create(file.path(gw_dir, "regioneR_snp"), recursive = TRUE, showWarnings = FALSE)
+  sin <- if (!is.null(gin) && normalizePath(opt$snp_set) == normalizePath(opt$gene_set)) gin
+         else read_gwas_input(opt$snp_set, opt$gwas_max_p)
+  snp <- gwas_snp_gr(sin)
+  if (opt$exclude_sex_chr) snp <- snp[!as.character(seqnames(snp)) %in% c("chrX", "chrY")]
+  bg1 <- Filter(Negate(is.null), bgs)
+  if (length(bg1) && !any(grepl("^chr", seqlevels(bg1[[1]]))))
+    seqlevels(snp) <- sub("^chr", "", seqlevels(snp))
+  W <- reduce(GRanges(seqnames(snp), IRanges(pmax(1L, start(snp) - opt$snp_window),
+                                             end(snp) + opt$snp_window)))
+  message("\n", opt$gwas_label, " SNP set: ", length(snp), " SNP positions -> ", length(W),
+          " merged windows (+/- ", opt$snp_window, " bp, ", round(sum(as.numeric(width(W))) / 1e6, 1), " Mb)")
+  sr <- list(); sp <- list(); near <- list()
+  for (s in man$set_id) {
+    message("  regioneR SNP proximity: ", s)
+    r <- perm_snp_set(to_gr(dmrs[[s]]), bgs[[s]], W, opt$perm_n, opt$perm_per_chr,
+                      opt$perm_alternative, opt$perm_seed)
+    if (is.null(r)) { message("    skipped (no background or too few regions)"); next }
+    sr[[s]] <- cbind(set_id = s, dimcols(s), r$summary)
+    sp[[s]] <- data.frame(randomized_A = s, permuted = r$permuted)
+    pdf(file.path(gw_dir, "regioneR_snp", paste0("snp_perm_", s, ".pdf")), width = 7, height = 5)
+    plot(r$pt, main = paste0(s, " DMRs within ", opt$snp_window / 1000, " kb of ", opt$gwas_label, " SNPs"))
+    dev.off()
+    d <- dmrs[[s]]; A <- to_gr(d); hit <- which(overlapsAny(A, W))
+    if (length(hit)) {
+      dn <- distanceToNearest(A[hit], snp)
+      j <- subjectHits(dn)[match(seq_along(hit), queryHits(dn))]
+      near[[s]] <- cbind(set_id = s, dimcols(s),
+                         nearest_snp = snp$snp[j], nearest_snp_pos = paste0(seqnames(snp)[j], ":", start(snp)[j]),
+                         distance_bp = mcols(dn)$distance[match(seq_along(hit), queryHits(dn))],
+                         gwas_trait = snp$trait[j], gwas_p = snp$gwas_p[j], gwas_study = snp$study[j],
+                         n_snps_within_window = countOverlaps(A[hit] + opt$snp_window, snp),
+                         user_cols(d[hit, ]))
+    }
+  }
+  snp_res <- bind_rows_any(sr)
+  if (nrow(snp_res)) {
+    snp_res$perm_FDR_run <- p.adjust(snp_res$perm_p, "BH")
+    print(snp_res[, c("set_id", "n_dmrs_tested", "observed", "perm_mean", "fold_enrichment", "z", "perm_p")],
+          row.names = FALSE)
+    pmx <- transform(snp_res, randomized_A = set_id,
+                     fixed_B = paste0(opt$gwas_label, " SNPs +/-", opt$snp_window / 1000, "kb"),
+                     group = paste0(opt$gwas_label, " SNP proximity"))
+    prx <- transform(bind_rows_any(sp), fixed_B = pmx$fixed_B[1], group = pmx$group[1])
+    plot_perm_summary(pmx, prx, file.path(gw_dir, paste0(gw_label, "_snp_proximity_summary.pdf")),
+                      paste0("DMRs near ", opt$gwas_label, " SNPs vs resampled background regions"),
+                      fdr_col = "perm_FDR_run",
+                      xlab = paste0("DMRs within ", opt$snp_window / 1000, " kb of a SNP (grey = permuted null)"),
+                      ylab = "DMR set")
+  }
+  snp_df <- data.frame(chr = as.character(seqnames(snp)), pos = start(snp), as.data.frame(mcols(snp)))
+  write_xlsx_safe(list(Permutation = snp_res, DMRs_near_SNPs = bind_rows_any(near), SNPs = snp_df),
+                  file.path(gw_dir, paste0(gw_label, "_snp_proximity.xlsx")))
+}
 
 # ----------------------------- define groups -------------------------------------
 # Internal family keys stay as in the original script (helpers such as set_colours()
@@ -590,7 +805,15 @@ for (gname in names(groups)) {
       })
       names(per_pat) <- paste0("ov_", gsub("&", "+", multi))
       save_per_overlap(per_pat, gdir2)
-      write_xlsx_safe(c(list(Patterns = pcg, Pairwise = pwg, Genes = gt), per_pat),
+      gw_sheet <- NULL
+      if (!is.null(gwas)) {          # GWAS genes among this group's DMR genes (plots are in gwas/)
+        gu <- gwas_upset(sets)
+        if (!is.null(gu) && any(gu$isg)) {
+          gw_sheet <- merge(gu$tab[gu$isg, c("geneSymbol", "pattern", paste0("dir_", sets))], gwas$genes, by = "geneSymbol")
+          gw_sheet <- gw_sheet[order(-gw_sheet$n_associations), ]
+        }
+      }
+      write_xlsx_safe(c(list(Patterns = pcg, Pairwise = pwg, Genes = gt, GWAS_genes = gw_sheet), per_pat),
                       file.path(gdir2, paste0(gname, "_overlap_gene.xlsx")))
       all_patterns[[paste0(gname, "_gene")]] <- cbind(comparison = flab, group = gname, mode = "gene", pcg)
       all_pairwise[[paste0(gname, "_gene")]] <- cbind(comparison = flab, group = gname, mode = "gene", pwg)
@@ -622,7 +845,8 @@ if (length(all_sexclass)) {
 }
 pw_all <- bind_rows_any(all_pairwise)
 if (nrow(pw_all)) pw_all$fisher_FDR_run <- p.adjust(pw_all$fisher_p, "BH")   # across every test in this run
-summ <- list(Set_sizes = sizes, Patterns = bind_rows_any(all_patterns), Pairwise = pw_all)
+summ <- list(Set_sizes = sizes, Patterns = bind_rows_any(all_patterns), Pairwise = pw_all,
+             GWAS_gene_set = gs_res, GWAS_snp_proximity = snp_res)
 if (length(all_perm)) {
   pm <- bind_rows_any(all_perm)
   pm$perm_FDR_run <- p.adjust(pm$perm_p, "BH")

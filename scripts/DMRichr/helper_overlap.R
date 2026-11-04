@@ -505,7 +505,8 @@ set_colours <- function(man_g, family) {
   setNames(unname(cols), man_g$set_id)
 }
 
-dir_pal <- c(Hyper = "#E66101", Hypo = "#5E3C99", `Discordant / mixed` = "#BDBDBD")
+# methylation direction colours (match RdBu heatmaps: red = hyper, blue = hypo)
+dir_pal <- c(Hyper = "#B2182B", Hypo = "#2166AC", `Discordant / mixed` = "#BDBDBD")
 
 # direction class per row: same direction in every set it appears in -> Hyper/Hypo
 direction_class <- function(tab, sets) {
@@ -702,8 +703,10 @@ perm_pairwise <- function(dmr_list, bg_list, ntimes, max_gap, min_overlap_bp, ra
 # as a red diamond, annotated with fold, z, p and FDR.
 #   pm: permutation table (randomized_A, fixed_B, observed, fold_enrichment, z, perm_p, <fdr_col>, group)
 #   pr: permuted counts (randomized_A, fixed_B, permuted, group)
-plot_perm_summary <- function(pm, pr, file, title, fdr_col = "perm_FDR_group") {
-  key <- function(d) paste0(d$randomized_A, "  →  ", d$fixed_B)
+plot_perm_summary <- function(pm, pr, file, title, fdr_col = "perm_FDR_group",
+                              xlab = "A DMRs overlapping B DMRs (grey = permuted null)",
+                              ylab = "A (randomized) -> B (fixed)") {
+  key <- function(d) paste0(d$randomized_A, " -> ", d$fixed_B)
   pm$pair <- key(pm); pr$pair <- key(pr)
   lv <- rev(unique(pm$pair[order(pm$group, pm$randomized_A, pm$fixed_B)]))
   pm$pair <- factor(pm$pair, lv); pr$pair <- factor(pr$pair, lv)
@@ -721,7 +724,7 @@ plot_perm_summary <- function(pm, pr, file, title, fdr_col = "perm_FDR_group") {
                         name = "Observed overlap") +
     scale_x_continuous(expand = expansion(mult = c(.02, .9))) +
     facet_wrap(~ group, ncol = 1, scales = "free") +
-    labs(x = "A DMRs overlapping B DMRs (grey = permuted null)", y = "A (randomized)  →  B (fixed)",
+    labs(x = xlab, y = ylab,
          title = title,
          caption = sprintf("%s; %d permutations per test (min p = %.3g)",
                            unique(pm$randomization)[1], unique(pm$ntimes)[1], 1 / (unique(pm$ntimes)[1] + 1))) +
@@ -730,4 +733,352 @@ plot_perm_summary <- function(pm, pr, file, title, fdr_col = "perm_FDR_group") {
   n <- length(lv); ng <- length(unique(pm$group))
   ggsave(file, p, width = 11, height = max(3.5, 0.55 * n + 1.2 * ng + 1.5), limitsize = FALSE)
   invisible(p)
+}
+
+# ====================================================================================
+# GWAS gene sets and SNP sets (used by 03_dmrichr_overlap.R --gene_set / --snp_set)
+#   Input: a GWAS Catalog association export (riskAllele, pValue, mappedGenes,
+#   efoTraits, accessionId, locations, ...) or a plain table (gene list for
+#   --gene_set; chr + pos/start for --snp_set).
+# ====================================================================================
+read_gwas_input <- function(path, max_p = NA) {
+  if (!file.exists(path)) stop("File not found: ", path)
+  ext <- tolower(tools::file_ext(path))
+  df <- if (ext %in% c("xlsx", "xls", "csv")) read_table_any(path) else
+    if (requireNamespace("data.table", quietly = TRUE))
+      as.data.frame(data.table::fread(path, sep = "\t", quote = "\"", check.names = FALSE,
+                                      data.table = FALSE, colClasses = "character"))
+    else read.delim(path, quote = "\"", check.names = FALSE, stringsAsFactors = FALSE,
+                    colClasses = "character")
+  is_cat <- "mappedGenes" %in% names(df)
+  if (is_cat) {
+    df$pValue <- suppressWarnings(as.numeric(df$pValue))
+    if (!is.na(max_p)) df <- df[!is.na(df$pValue) & df$pValue <= max_p, , drop = FALSE]
+    df$assoc_id <- sprintf("A%05d", seq_len(nrow(df)))
+  }
+  attr(df, "type") <- if (is_cat) "gwas_catalog" else "table"
+  df
+}
+
+split_genes <- function(g, sep = NA) {
+  g <- as.character(g); g <- g[!is.na(g) & !g %in% c("", "NA", "-")]
+  if (!is.na(sep)) g <- trimws(unlist(strsplit(g, sep, fixed = TRUE)))
+  unique(g[g != ""])
+}
+
+# Current symbols via org.Hs.eg.db: current symbols kept; unique aliases mapped to the
+# current symbol; ambiguous or unknown symbols kept as given (and flagged).
+symbol_map <- function(sym, enable = TRUE) {
+  sym <- unique(as.character(sym[!is.na(sym) & sym != ""]))
+  ok <- enable && requireNamespace("org.Hs.eg.db", quietly = TRUE) &&
+        requireNamespace("AnnotationDbi", quietly = TRUE)
+  out <- data.frame(original = sym, symbol = sym,
+                    status = if (ok) "current" else "not checked", stringsAsFactors = FALSE)
+  if (enable && !ok) message("org.Hs.eg.db/AnnotationDbi not installed: gene symbols NOT harmonized")
+  if (!ok || !length(sym)) return(out)
+  db <- org.Hs.eg.db::org.Hs.eg.db
+  nf <- !sym %in% AnnotationDbi::keys(db, "SYMBOL")
+  q <- sym[nf & sym %in% AnnotationDbi::keys(db, "ALIAS")]
+  if (length(q)) {
+    am <- suppressMessages(AnnotationDbi::select(db, keys = q, keytype = "ALIAS", columns = "SYMBOL"))
+    am <- unique(am[!is.na(am$SYMBOL), c("ALIAS", "SYMBOL")])
+    n <- table(am$ALIAS)
+    uni <- am[am$ALIAS %in% names(n)[n == 1], ]
+    i <- match(uni$ALIAS, out$original)
+    out$symbol[i] <- uni$SYMBOL; out$status[i] <- "alias -> current symbol"
+    out$status[out$original %in% names(n)[n > 1]] <- "ambiguous alias (kept as given)"
+  }
+  out$status[nf & out$status == "current"] <- "not in org.Hs.eg.db (kept as given)"
+  out
+}
+apply_symbol_map <- function(x, map) {
+  i <- match(x, map$original)
+  ifelse(is.na(i), x, map$symbol[i])
+}
+# harmonize a gene column that may hold several genes joined by sep
+harmonize_gene_col <- function(x, H, sep = NA) {
+  if (is.na(sep)) return(ifelse(is.na(x), NA, H(x)))
+  vapply(strsplit(ifelse(is.na(x), "", x), sep, fixed = TRUE), function(v) {
+    v <- trimws(v); if (!length(v)) NA_character_ else paste(unique(H(v)), collapse = sep)
+  }, "")
+}
+
+# GWAS Catalog / gene list -> per-gene evidence table
+#   intergenic "A - B" -> both genes; interaction "A x B" -> both genes
+# Read-through names (e.g. DTX2P1-UPK3BP1-PMS2P11, STX16-NPEPL1): split on "-" only when
+# EVERY part is itself a current gene symbol in org.Hs.eg.db (so HLA-DRB1, NKX2-1,
+# SLC9A3-AS1, LYPLAL1-DT stay whole). Returns a named list: symbol -> component genes.
+readthrough_components <- function(sym) {
+  sym <- unique(sym[grepl("-", sym)])
+  if (!length(sym) || !requireNamespace("org.Hs.eg.db", quietly = TRUE) ||
+      !requireNamespace("AnnotationDbi", quietly = TRUE)) return(list())
+  cur <- AnnotationDbi::keys(org.Hs.eg.db::org.Hs.eg.db, "SYMBOL")
+  parts <- strsplit(sym, "-", fixed = TRUE)
+  ok <- vapply(parts, function(p) length(p) >= 2 && all(p %in% cur), TRUE)
+  setNames(parts[ok], sym[ok])
+}
+
+build_gwas_gene_set <- function(df, harmonize = TRUE, expand_readthrough = TRUE) {
+  if (identical(attr(df, "type"), "gwas_catalog")) {
+    mg <- ifelse(is.na(df$mappedGenes), "", as.character(df$mappedGenes))
+    sp <- strsplit(mg, ",|;| - | x ")
+    long <- data.frame(assoc_id = rep(df$assoc_id, lengths(sp)),
+                       gene_original = trimws(unlist(sp)),
+                       intergenic = rep(grepl(" - ", mg), lengths(sp)), stringsAsFactors = FALSE)
+    long <- unique(long[!long$gene_original %in% c("", "-", "NA"), ])
+    long$from_readthrough <- NA_character_
+    if (expand_readthrough) {
+      rt <- readthrough_components(long$gene_original)
+      if (length(rt)) {
+        add <- do.call(rbind, lapply(names(rt), function(g) {
+          x <- long[long$gene_original == g, c("assoc_id", "intergenic")]
+          data.frame(assoc_id = rep(x$assoc_id, each = length(rt[[g]])),
+                     gene_original = rep(rt[[g]], nrow(x)),
+                     intergenic = rep(x$intergenic, each = length(rt[[g]])),
+                     from_readthrough = g, stringsAsFactors = FALSE)
+        }))
+        long <- rbind(long, add)
+        long <- long[!duplicated(long[, c("assoc_id", "gene_original")]), ]
+        message("  read-through names expanded to their component genes: ",
+                paste(names(rt), collapse = ", "))
+      }
+    }
+    map <- symbol_map(long$gene_original, harmonize)
+    long$geneSymbol <- apply_symbol_map(long$gene_original, map)
+    k <- match(long$assoc_id, df$assoc_id)
+    col <- function(nm) if (nm %in% names(df)) as.character(df[[nm]][k]) else rep(NA_character_, length(k))
+    long$pValue <- df$pValue[k]; long$study <- col("accessionId"); long$pubmed <- col("pubmedId")
+    long$trait <- col("efoTraits"); long$snp <- col("riskAllele")
+    genes <- do.call(rbind, lapply(split(long, long$geneSymbol), function(x) {
+      p <- suppressWarnings(min(x$pValue, na.rm = TRUE))
+      data.frame(geneSymbol = x$geneSymbol[1],
+                 original_symbols = paste(sort(unique(x$gene_original)), collapse = ";"),
+                 n_associations = length(unique(x$assoc_id)),
+                 n_studies = length(unique(x$study)),
+                 n_publications = length(unique(x$pubmed)),
+                 n_traits = length(unique(x$trait)),
+                 min_p = ifelse(is.finite(p), p, NA),
+                 n_gw_significant = length(unique(x$assoc_id[!is.na(x$pValue) & x$pValue < 5e-8])),
+                 only_intergenic = all(x$intergenic),
+                 via_readthrough = paste(sort(unique(na.omit(x$from_readthrough))), collapse = ";"),
+                 traits = paste(sort(unique(x$trait)), collapse = " | "),
+                 studies = paste(sort(unique(x$study)), collapse = ";"),
+                 snps = paste(sort(unique(sub("-[^-]*$", "", x$snp))), collapse = ";"),
+                 stringsAsFactors = FALSE)
+    }))
+    genes <- genes[order(-genes$n_associations, genes$geneSymbol), ]
+    tr <- do.call(rbind, lapply(split(long, long$trait), function(x) data.frame(
+      trait = x$trait[1], n_associations = length(unique(x$assoc_id)),
+      n_studies = length(unique(x$study)), n_genes = length(unique(x$geneSymbol)),
+      stringsAsFactors = FALSE)))
+    tr <- tr[order(-tr$n_associations), ]
+  } else {
+    gc <- detect_col(df, c("geneSymbol", "gene_symbol", "SYMBOL", "gene", names(df)[1]), "gene")
+    keep <- !trimws(as.character(df[[gc]])) %in% c("", "NA", "-")
+    g0 <- trimws(as.character(df[[gc]]))[keep]
+    map <- symbol_map(g0, harmonize)
+    nac <- detect_col(df, c("n_associations"), "n", required = FALSE)
+    na <- if (is.na(nac)) rep(1L, length(g0)) else as.integer(df[[nac]][keep])
+    na[is.na(na)] <- 1L
+    genes <- aggregate(list(n_associations = na), list(geneSymbol = apply_symbol_map(g0, map)), max)
+    genes$n_studies <- NA; genes$n_traits <- NA; genes$min_p <- NA; genes$n_gw_significant <- NA
+    genes$traits <- NA
+    long <- NULL; tr <- NULL
+  }
+  rownames(genes) <- NULL
+  list(genes = genes, long = long, map = map, traits = tr)
+}
+
+# SNP positions (GWAS Catalog 'locations' = GRCh38 chr:pos) or a table with chr + pos/start
+gwas_snp_gr <- function(df) {
+  if (identical(attr(df, "type"), "gwas_catalog")) {
+    loc <- ifelse(is.na(df$locations), "", as.character(df$locations))
+    sp <- strsplit(loc, ",|;| x ")
+    d <- data.frame(assoc_id = rep(df$assoc_id, lengths(sp)), loc = trimws(unlist(sp)),
+                    stringsAsFactors = FALSE)
+    d <- d[grepl("^(chr)?[0-9XYMxy]+:[0-9]+$", d$loc), ]
+    k <- match(d$assoc_id, df$assoc_id)
+    chr <- paste0("chr", toupper(sub("^chr", "", sub(":.*", "", d$loc), ignore.case = TRUE)))
+    gr <- GRanges(chr, IRanges(as.integer(sub(".*:", "", d$loc)), width = 1))
+    gr$assoc_id <- d$assoc_id
+    gr$snp <- if ("riskAllele" %in% names(df)) as.character(df$riskAllele[k]) else NA
+    gr$trait <- if ("efoTraits" %in% names(df)) as.character(df$efoTraits[k]) else NA
+    gr$gwas_p <- df$pValue[k]
+    gr$study <- if ("accessionId" %in% names(df)) as.character(df$accessionId[k]) else NA
+  } else {
+    cc <- detect_col(df, c("chr", "seqnames", "chrom", "CHR"), "chromosome")
+    pc <- detect_col(df, c("pos", "position", "start", "BP"), "position")
+    chr <- as.character(df[[cc]]); chr <- ifelse(grepl("^chr", chr), chr, paste0("chr", chr))
+    gr <- GRanges(chr, IRanges(as.integer(df[[pc]]), width = 1))
+    sc <- detect_col(df, c("snp", "rsid", "SNP", "riskAllele"), "snp", required = FALSE)
+    gr$snp <- if (is.na(sc)) NA else as.character(df[[sc]])
+    gr$trait <- NA; gr$gwas_p <- NA; gr$study <- NA
+  }
+  gr
+}
+
+# Gene-set test for one DMR set.
+#   U = genes of the set's DMRichR background (universe); D = DMR genes in U;
+#   G = GWAS genes in U. One-sided Fisher (all associations, and p < 5e-8 only), plus an
+#   association-weighted check: among testable GWAS genes, do DMR genes carry more GWAS
+#   associations than the rest (one-sided Wilcoxon)?
+gene_set_enrichment_one <- function(D, U, gs) {
+  U <- unique(U); D <- intersect(unique(D), U)
+  G <- intersect(gs$geneSymbol, U)
+  Ggw <- intersect(gs$geneSymbol[which(gs$n_gw_significant > 0)], U)
+  f <- function(G) {
+    if (!length(U) || !length(D) || !length(G)) return(c(n = length(G), ov = 0, exp = NA, OR = NA, p = NA))
+    tb <- table(factor(U %in% D, c(TRUE, FALSE)), factor(U %in% G, c(TRUE, FALSE)))
+    ft <- fisher.test(tb, alternative = "greater")
+    c(n = length(G), ov = sum(D %in% G), exp = length(D) * length(G) / length(U),
+      OR = unname(ft$estimate), p = ft$p.value)
+  }
+  a <- f(G); b <- f(Ggw)
+  na <- gs$n_associations[match(G, gs$geneSymbol)]; inD <- G %in% D
+  w <- if (sum(inD) >= 1 && sum(!inD) >= 1)
+    suppressWarnings(wilcox.test(na[inD], na[!inD], alternative = "greater")$p.value) else NA
+  ov <- G[inD][order(-na[inD])]
+  data.frame(universe_genes = length(U), dmr_genes = length(D),
+             gwas_genes_in_universe = a[["n"]], overlap = a[["ov"]], expected = a[["exp"]],
+             fold = ifelse(isTRUE(a[["exp"]] > 0), a[["ov"]] / a[["exp"]], NA),
+             fisher_OR = a[["OR"]], fisher_p = a[["p"]],
+             gw_gwas_genes_in_universe = b[["n"]], gw_overlap = b[["ov"]], gw_expected = b[["exp"]],
+             gw_fold = ifelse(isTRUE(b[["exp"]] > 0), b[["ov"]] / b[["exp"]], NA),
+             gw_fisher_OR = b[["OR"]], gw_fisher_p = b[["p"]],
+             mean_assoc_dmr_genes = if (any(inD)) mean(na[inD]) else NA,
+             mean_assoc_other_gwas_genes = if (any(!inD)) mean(na[!inD]) else NA,
+             assoc_wilcox_p = w,
+             overlap_genes = if (length(ov)) paste0(ov, " (", na[match(ov, G)], ")", collapse = "; ") else "",
+             stringsAsFactors = FALSE)
+}
+
+# hyper / hypo / mixed per (harmonized) gene for one DMR set
+gene_dir_table <- function(d, H) {
+  sep <- attr(d, "gene_sep"); if (is.null(sep)) sep <- NA
+  d <- d[!is.na(d$.gene), c(".gene", ".dir")]
+  if (!nrow(d)) return(data.frame(geneSymbol = character(0), dir = character(0)))
+  g <- if (!is.na(sep)) strsplit(d$.gene, sep, fixed = TRUE) else as.list(d$.gene)
+  x <- data.frame(geneSymbol = H(trimws(unlist(g))), dir = rep(d$.dir, lengths(g)),
+                  stringsAsFactors = FALSE)
+  x <- x[x$geneSymbol != "", ]
+  a <- tapply(x$dir, x$geneSymbol, function(v) if (all(v > 0)) "hyper" else if (all(v < 0)) "hypo" else "mixed")
+  data.frame(geneSymbol = names(a), dir = unname(a), stringsAsFactors = FALSE)
+}
+
+# Evidence plot: DMR genes that are GWAS genes. Left: number of GWAS associations
+# (fill = strongest p, label = studies / traits). Right: UpSet-style dot matrix of the DMR sets
+# (coloured = gene is a DMR gene in that set, red hyper / blue hypo; grey = not), rows joined by
+# a line and shaded alternately across both panels; vertical lines separate set_groups.
+plot_gwas_evidence <- function(ev, info, sets, file, title, max_genes = 60, label = "GWAS",
+                               set_groups = NULL) {
+  if (is.null(ev) || !nrow(ev)) return(invisible(NULL))
+  info <- info[info$geneSymbol %in% ev$geneSymbol, ]
+  nset <- table(ev$geneSymbol)
+  info$n_sets <- as.integer(nset[info$geneSymbol])
+  info <- info[order(-info$n_associations, -info$n_sets, info$geneSymbol), ]
+  dropped <- max(0, nrow(info) - max_genes)
+  info <- head(info, max_genes); ev <- ev[ev$geneSymbol %in% info$geneSymbol, ]
+  lv <- rev(info$geneSymbol); ng <- length(lv)
+  info$nlp <- -log10(pmax(info$min_p, 1e-300))
+  info$lab <- ifelse(is.na(info$n_studies), "", paste0(info$n_studies, " st / ", info$n_traits, " tr"))
+  stripes <- data.frame(pos = seq(1, ng, by = 2))
+  stripe_layer <- geom_rect(data = stripes, aes(xmin = -Inf, xmax = Inf, ymin = pos - .5, ymax = pos + .5),
+                            inherit.aes = FALSE, fill = "grey93", colour = NA)
+  p1 <- ggplot(info, aes(n_associations, geneSymbol)) + stripe_layer +
+    geom_col(aes(fill = nlp), width = .7) +
+    geom_text(aes(label = lab), hjust = -0.1, size = 2.5, colour = "grey25") +
+    scale_y_discrete(limits = lv) +
+    scale_x_continuous(expand = expansion(mult = c(0, .35))) +
+    scale_fill_gradient(low = "#C6DBEF", high = "#08306B", na.value = "grey70", name = "-log10(best p)") +
+    labs(x = paste0(label, " associations (n)"), y = NULL, title = title,
+         subtitle = paste0("DMR genes (>= 1 set) that are ", label, " genes",
+                           if (dropped) paste0("; top ", max_genes, " shown (", dropped, " more in table)") else ""),
+         caption = "st = studies, tr = traits") +
+    theme_bw(10) + theme(axis.text.y = element_text(face = "italic"), legend.position = "bottom",
+                         panel.grid.major.y = element_blank(), panel.grid.minor = element_blank(),
+                         plot.caption = element_text(hjust = 0, colour = "grey30"))
+  grid_df <- expand.grid(set = sets, geneSymbol = lv, stringsAsFactors = FALSE)
+  k <- match(paste(grid_df$set, grid_df$geneSymbol), paste(ev$set, ev$geneSymbol))
+  grid_df$dir <- ev$dir[k]; grid_df$on <- !is.na(k)
+  grid_df$x <- match(grid_df$set, sets); grid_df$y <- match(grid_df$geneSymbol, lv)
+  seg <- do.call(rbind, lapply(split(grid_df[grid_df$on, ], grid_df$geneSymbol[grid_df$on]), function(z)
+    if (nrow(z) >= 2) data.frame(y = z$y[1], xmin = min(z$x), xmax = max(z$x)) else NULL))
+  vl <- if (!is.null(set_groups)) which(head(set_groups, -1) != tail(set_groups, -1)) + .5 else numeric(0)
+  p2 <- ggplot(grid_df, aes(x, y)) + stripe_layer +
+    { if (length(vl)) geom_vline(xintercept = vl, colour = "grey55", linewidth = .4) } +
+    { if (!is.null(seg) && nrow(seg)) geom_segment(data = seg, aes(x = xmin, xend = xmax, y = y, yend = y),
+                                                    inherit.aes = FALSE, colour = "grey35", linewidth = .7) } +
+    geom_point(data = grid_df[!grid_df$on, ], colour = "grey85", size = 2.4) +
+    geom_point(data = grid_df[grid_df$on, ], aes(colour = dir), size = 3.6) +
+    scale_colour_manual(values = c(hyper = "#B2182B", hypo = "#2166AC", mixed = "#7F7F7F"),
+                        name = "DMR direction", drop = FALSE) +
+    scale_x_continuous(breaks = seq_along(sets), labels = sets, limits = c(.5, length(sets) + .5),
+                       expand = c(0, 0)) +
+    scale_y_continuous(breaks = seq_len(ng), limits = c(.5, ng + .5), expand = c(0, 0)) +
+    labs(x = NULL, y = NULL, title = " ", subtitle = " ", caption = " ") + theme_bw(10) +
+    theme(axis.text.y = element_blank(), axis.ticks.y = element_blank(),
+          axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "bottom",
+          panel.grid = element_blank())
+  p1 <- p1 + scale_y_discrete(limits = lv, expand = c(0, .5))
+  g <- cbind(ggplotGrob(p1), ggplotGrob(p2), size = "max")
+  panels <- grep("^panel", g$layout$name)
+  cols <- sort(unique(g$layout$l[panels]))
+  wr <- max(1.2, .3 * length(sets))
+  g$widths[cols] <- unit(c(3, wr), "in")
+  pdf(file, width = 3 + wr + 3.4, height = 3 + .19 * ng)
+  grid::grid.newpage(); grid::grid.draw(g); dev.off()
+  invisible(info)
+}
+
+# Gene-set enrichment summary: fold enrichment per set, all associations vs p < 5e-8
+plot_gene_set_enrichment <- function(res, file, title) {
+  mk <- function(test, ov, ex, fdr) data.frame(set = res$set_id, test = test, overlap = ov,
+                                               expected = ex, fdr = fdr, stringsAsFactors = FALSE)
+  d <- rbind(mk("All associations", res$overlap, res$expected, res$fisher_FDR_run),
+             mk("p < 5e-8 associations only", res$gw_overlap, res$gw_expected, res$gw_fisher_FDR_run))
+  d <- d[!is.na(d$expected) & d$expected > 0, ]
+  if (!nrow(d)) return(invisible(NULL))
+  d$fold <- d$overlap / d$expected
+  d$sig <- ifelse(!is.na(d$fdr) & d$fdr < 0.05, "FDR < 0.05", "n.s.")
+  d$set <- factor(d$set, rev(res$set_id))
+  p <- ggplot(d, aes(fold, set)) + geom_vline(xintercept = 1, linetype = 2, colour = "grey50") +
+    geom_segment(aes(x = 1, xend = fold, yend = set), colour = "grey65") +
+    geom_point(aes(size = overlap, colour = sig)) +
+    geom_text(aes(label = sprintf("%d / %.1f", overlap, expected)), hjust = -0.35, size = 2.8) +
+    facet_wrap(~ test) +
+    scale_colour_manual(values = c("FDR < 0.05" = "#D7191C", "n.s." = "#2C7BB6"), name = NULL, drop = FALSE) +
+    scale_size_area(max_size = 6, name = "Overlapping genes") +
+    scale_x_continuous(expand = expansion(mult = c(.05, .25))) +
+    labs(x = "Fold enrichment (observed / expected GWAS genes among DMR genes)", y = NULL, title = title,
+         caption = paste("Label: observed / expected. Universe = genes annotated to each set's DMRichR",
+                         "background regions; one-sided Fisher, BH across all sets.")) +
+    theme_bw(10) + theme(legend.position = "bottom", plot.caption = element_text(hjust = 0, colour = "grey30"))
+  ggsave(file, p, width = 10, height = max(3.5, .35 * length(unique(d$set)) + 2))
+  invisible(p)
+}
+
+# regioneR: are DMRs closer to GWAS SNPs than resampled background (candidate) regions?
+#   B = SNP +/- window (merged); statistic = number of DMRs overlapping a window.
+perm_snp_set <- function(A, bg, W, ntimes = 100, per_chr = TRUE, alternative = "greater", seed = 1) {
+  if (is.null(bg)) return(NULL)
+  U <- granges(bg); A <- granges(A)[overlapsAny(A, U)]
+  if (!length(A) || length(U) <= length(A)) return(NULL)
+  if (per_chr) {
+    nA <- table(as.character(seqnames(A))); nU <- table(as.character(seqnames(U)))
+    if (any(nU[names(nA)] < nA)) per_chr <- FALSE
+  }
+  ev <- list(numOverlaps = function(A, B, ...) sum(overlapsAny(A, B)))
+  set.seed(seed)
+  pt <- regioneR::permTest(A = A, B = W, universe = U, per.chromosome = per_chr, ntimes = ntimes,
+                           randomize.function = regioneR::resampleRegions,
+                           randomize.function.name = "resampleRegions",
+                           evaluate.function = ev, alternative = alternative, verbose = FALSE)
+  r <- pt$numOverlaps; perm <- r$permuted
+  list(pt = pt, permuted = perm,
+       summary = data.frame(randomization = "resample", n_dmrs_tested = length(A), universe = length(U),
+                            per_chromosome = per_chr, observed = r$observed,
+                            perm_mean = mean(perm), perm_sd = sd(perm),
+                            fold_enrichment = ifelse(mean(perm) > 0, r$observed / mean(perm), NA),
+                            z = r$zscore, perm_p = r$pval, alternative = r$alternative,
+                            ntimes = ntimes, stringsAsFactors = FALSE))
 }
