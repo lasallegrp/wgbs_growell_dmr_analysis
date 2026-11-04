@@ -1,1082 +1,740 @@
 #!/usr/bin/env Rscript
 
-# ================================================================
-# SCRIPT 16: Consensus Module Enrichment
+# ============================================================
+# 16_enrichment_consensus.R
 #
-# Pipeline: comethyl WGBS consensus analysis
+# Consensus-pipeline counterpart of 12b_enrichment.R. GREAT,
+# clusterProfiler and Enrichr enrichment, gene-set cache, statistics,
+# tables and plots are IDENTICAL to 12b (copied verbatim), so consensus
+# and standard results are directly comparable.
 #
-# PURPOSE
-#   Runs pathway and gene-set enrichment analysis for selected
-#   consensus modules using gene lists from script 15:
-#     1) Load annotation files from script 15
-#     2) Select modules via explicit list OR stats-based selection
-#        (modules significant for any trait in any dataset)
-#     3) Run per-module enrichment: KEGG, GO (BP/MF/CC), Reactome,
-#        and/or Enrichr
-#     4) Generate per-module result tables (.tsv/.xlsx) and dotplots
-#     5) Generate summary dotplots across all selected modules
+# Differences from 12b:
+#   - one --annotation_dir (script 15 output) instead of --annotation_dir_v1/v2/v3
+#   - stats-based module selection takes the UNION across up to three
+#     datasets (--dataset1/2/3_stats_file + _label); the dataset(s) each
+#     module came from are written to selected_modules_source.tsv
+#   - trait names are matched ignoring case, spaces and punctuation (same
+#     rule as resolveTraits()), so "F1 Breast Cancer" in the trait list
+#     matches "F1 Breast Cancer" / "F1.Breast.Cancer" in a stats file
+#   - output goes under comethyl_output/consensus/16_enrichment/
 #
-# NOTE
-#   Module assignments are shared across datasets — enrichment runs
-#   once per adjustment version. When using stats-based selection,
-#   modules significant in ANY provided dataset are included.
+#   1. GREAT (primary; region-based, offline) -- foreground = module
+#      regions, background = all consensus regions (grey included) by
+#      default; same GREAT v4 genes + basalPlusExt rule as script 15.
+#   2. clusterProfiler ORA -- script 15's GREAT gene lists,
+#      universe = Background_Genes.
+#   3. Enrichr (online) -- same lists and background; skipped with a
+#      logged reason when there is no internet (compute nodes).
 #
-# REQUIRED INPUTS
-#   --project_root   : root directory of the analysis project
-#   --annotation_dir : path to script 15 output directory
-#                      (comethyl_output/consensus/15_module_annotation/
-#                       <cpg_label>/<region_label>/<adjustment_version>/)
+# Gene-set cache: the SAME RDS as 12b (build once on a login node):
+#   Rscript 16_enrichment_consensus.R --build_gene_set_cache_only TRUE \
+#     --gene_set_cache /path/reference/gene_sets_hg38.rds
 #
-# SELECTION MODE (provide one):
-#   --module_list_file : .txt file OR directory of .txt files with module
-#                        names to enrich (one per line)
-#   OR
-#   --trait_list_file       : .txt file OR directory of .txt files with
-#                             trait names for stats-based selection
-#   --dataset1_stats_file   : ME-trait stats TSV from script 12a (dataset 1)
-#   --dataset2_stats_file   : ME-trait stats TSV from script 12a (dataset 2)
-#   --dataset3_stats_file   : ME-trait stats TSV from script 12a (dataset 3)
-#   --dataset1_label        : label for dataset 1 [default = dataset1]
-#   --dataset2_label        : label for dataset 2
-#   --dataset3_label        : label for dataset 3
-#   --p_thresh              : p-value threshold for module selection [default = 0.05]
+# Module selection (default: ALL non-grey modules):
+#   --modules yellow,brown, or --module_list_file (file or dir of .txt), or
+#   --trait_list_file + --dataset1_stats_file [+ dataset2/3]
 #
-# OPTIONAL INPUTS — ENRICHMENT METHODS
-#   --do_kegg          : run KEGG TRUE/FALSE [default = TRUE]
-#   --do_go            : run GO BP/MF/CC TRUE/FALSE [default = TRUE]
-#   --do_reactome      : run Reactome TRUE/FALSE [default = TRUE]
-#   --do_enrichr       : run Enrichr TRUE/FALSE [default = FALSE]
-#   --enrichr_dbs      : comma-separated Enrichr DB names
-#   --organism         : KEGG organism code [default = hsa]
-#
-# OPTIONAL INPUTS — ENRICHR SETTINGS
-#   --use_enrichr_background : use background gene universe TRUE/FALSE [default = TRUE]
-#   --min_bg_genes           : minimum background size [default = 200]
-#   --enrichr_retries        : Enrichr retry count [default = 3]
-#   --enrichr_sleep          : seconds between retries [default = 1]
-#
-# OPTIONAL INPUTS — PLOT SETTINGS
-#   --plot_p_col      : p.adjust or pvalue for summary plots [default = p.adjust]
-#   --plot_top_n      : top N terms per module in summary plots [default = 10]
-#   --plot_sig_cutoff : significance cutoff for summary plots [default = 0.05]
-#   --plot_width      : summary plot width in inches [default = 14]
-#   --plot_height     : summary plot height in inches [default = 10]
-#
-# OUTPUTS
-#   comethyl_output/consensus/16_enrichment/<cpg_label>/<region_label>/<adjustment_version>/[<list_stem>/]
-#       selected_modules.txt
-#       selected_modules_source.tsv
-#       selected_modules_summary.tsv
-#       <module>_KEGG.tsv / .xlsx / _dotplot.pdf
-#       <module>_GO_BP/MF/CC.tsv / .xlsx / _dotplot.pdf
-#       <module>_Reactome.tsv / .xlsx / _dotplot.pdf
-#       <module>_enrichr.xlsx
-#       Summary_KEGG_top<n>_<pcol><cutoff>.pdf
-#       Summary_GO_BP/MF/CC_top<n>_<pcol><cutoff>.pdf
-#       Summary_Reactome_top<n>_<pcol><cutoff>.pdf
-#       Summary_Enrichr_<db>_top<n>_<pcol><cutoff>.pdf
-#       run_log.txt
-#       run_parameters.txt
-#       sessionInfo.txt
-#
-# NOTES
-#   - cpg_label and region_label are derived from --annotation_dir path
-#   - If --module_list_file or --trait_list_file is a directory, each
-#     .txt file is processed separately in its own output subfolder
-#     named after the file stem
-#   - Enrichr requires internet access; all other methods run offline
-#
-# EXAMPLE
-#   Rscript /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/scripts/comethyl/consensus/16_enrichment_consensus.R \
+# Typical run:
+#   Rscript 16_enrichment_consensus.R \
 #     --project_root /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George \
-#     --annotation_dir /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/results/comethyl_output/consensus/15_module_annotation/cov3_75pct/covMin4_methSD0p08/v1_all_pcs \
-#     --adjustment_version v1_all_pcs \
-#     --trait_list_file /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/analysis/config/comethyl/outcome_traits.txt \
-#     --dataset1_label Baseline \
-#     --dataset1_stats_file /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/results/comethyl_output/consensus/12a_me_trait_analysis/cov3_75pct/covMin4_methSD0p08/v1_all_pcs/Baseline/ME_Trait_Correlation_Stats_Bicor.tsv \
-#     --dataset2_label 36_38wks \
-#     --dataset2_stats_file /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/results/comethyl_output/consensus/12a_me_trait_analysis/cov3_75pct/covMin4_methSD0p08/v1_all_pcs/36_38wks/ME_Trait_Correlation_Stats_Bicor.tsv \
-#     --p_thresh 0.05 \
-#     --do_kegg TRUE \
-#     --do_go TRUE \
-#     --do_reactome TRUE \
-#     --plot_top_n 10
-# PURPOSE
-#   - Load annotated regions from script 15
-#   - Select modules via explicit list OR stats-based (trait + p-threshold)
-#     across one or more datasets — union of significant modules
-#   - Run KEGG, GO (BP/MF/CC), Reactome, and/or Enrichr per module
-#   - Generate per-module result tables and dotplots
-#   - Generate summary dotplots across all selected modules
-#   - Write run logs
+#     --annotation_dir .../consensus/15_module_annotation/cov3_75pct/covMin4_methSD0p08/v1_all_pcs \
+#     --gene_set_cache /path/reference/gene_sets_hg38.rds \
+#     --trait_list_file .../outcome_traits.txt \
+#     --dataset1_label Baseline --dataset1_stats_file .../Baseline/ME_Trait_Correlation_Stats_Bicor.tsv \
+#     --dataset2_label 36_38wks --dataset2_stats_file .../36_38wks/ME_Trait_Correlation_Stats_Bicor.tsv
 #
-# NOTE
-#   Module assignments are shared across datasets — enrichment runs
-#   once per adjustment version. When using stats-based selection,
-#   modules significant in ANY dataset are included.
+# Old script-16 arguments still accepted: --adjustment_version (output
+# label; default = annotation_dir folder name), --do_kegg/--do_go/
+# --do_reactome (FALSE drops those collections), --organism (ignored).
 #
-# SELECTION MODES
-#   Provide either:
-#     --module_list_file  : explicit list of module names (file OR directory of .txt files)
-#   OR:
-#     --trait_list_file + --dataset1_stats_file (+ dataset2/3)
-#       modules where trait is in list AND p <= p_thresh in ANY dataset
-#
-# OUTPUT STRUCTURE
-#   comethyl_output/consensus/16_enrichment/
-#     <cpg_label>/
-#       <region_label>/
-#         <adjustment_version>/
-#           [<list_stem>/]
-#             selected_modules.txt
-#             selected_modules_source.tsv
-#             selected_modules_summary.tsv
-#             <module>_KEGG.tsv / .xlsx / _dotplot.pdf
-#             <module>_GO_BP/MF/CC.tsv / .xlsx / _dotplot.pdf
-#             <module>_Reactome.tsv / .xlsx / _dotplot.pdf
-#             <module>_enrichr.xlsx
-#             Summary_KEGG_top<n>_<pcol><cutoff>.pdf
-#             Summary_GO_BP/MF/CC_top<n>_<pcol><cutoff>.pdf
-#             Summary_Reactome_top<n>_<pcol><cutoff>.pdf
-#             Summary_Enrichr_<db>_top<n>_<pcol><cutoff>.pdf
-#             run_log.txt
-#             run_parameters.txt
-#             sessionInfo.txt
-#
-# PATH DERIVATION
-#   cpg_label and region_label derived from --annotation_dir path:
-#     .../15_module_annotation/<cpg_label>/<region_label>/<adjustment_version>/
-# ================================================================
+# Outputs (same layout as 12b):
+#   <project_root>/comethyl_output/consensus/16_enrichment/<cpg>/<region>/<adjustment_version>/[<list_stem>/]
+#     selected_modules.txt, selected_modules_source.tsv, selected_modules_summary.tsv,
+#     enrichment_overview.tsv, GREAT/, clusterProfiler/, Enrichr/,
+#     run_log.txt, run_parameters.txt, session_info.txt
+# ============================================================
 
-message("Starting Script 16 ")
+message("Starting Script 16")
 
 suppressPackageStartupMessages({
+  library(optparse)
   library(dplyr)
   library(openxlsx)
-  library(clusterProfiler)
-  library(org.Hs.eg.db)
-  library(AnnotationDbi)
   library(ggplot2)
   library(scales)
+  library(GenomicRanges)
 })
 
-# ================================================================
-# Helpers
-# ================================================================
-get_arg <- function(flag, default = NULL) {
-  args <- commandArgs(trailingOnly = TRUE)
-  idx  <- match(flag, args)
-  if (!is.na(idx) && idx < length(args)) return(args[idx + 1])
-  default
+# ============================================================
+# 1) CLI
+# ============================================================
+option_list <- list(
+  make_option("--project_root", type = "character", default = NULL,
+              help = "Project root. Outputs go under <project_root>/comethyl_output/consensus/16_enrichment/. Required unless --build_gene_set_cache_only TRUE."),
+  make_option("--annotation_dir", type = "character", default = NULL,
+              help = "Script 15 output folder (contains Annotated_Regions.tsv, Module_Gene_List.tsv, Background_Genes.tsv)."),
+  make_option("--adjustment_version", type = "character", default = NULL,
+              help = "Label for the output folder [default: --annotation_dir folder name]."),
+  make_option("--modules", type = "character", default = NULL,
+              help = "Comma-separated modules to enrich, e.g. 'yellow,brown,red,lightsteelblue1'. Default (with no list/trait file): all non-grey modules."),
+  make_option("--module_list_file", type = "character", default = NULL,
+              help = "Text file of module names, or a directory of .txt files (each processed into a subfolder named after the file)."),
+  make_option("--trait_list_file", type = "character", default = NULL,
+              help = "Text file (or directory) of traits; modules with ME-trait p <= --p_thresh for any listed trait in ANY dataset stats file are selected."),
+  make_option("--dataset1_stats_file", type = "character", default = NULL, help = "ME-trait stats (consensus ME-trait script) for dataset 1."),
+  make_option("--dataset1_label", type = "character", default = "dataset1", help = "Label for dataset 1 [default %default]."),
+  make_option("--dataset2_stats_file", type = "character", default = NULL, help = "ME-trait stats for dataset 2."),
+  make_option("--dataset2_label", type = "character", default = "dataset2", help = "Label for dataset 2 [default %default]."),
+  make_option("--dataset3_stats_file", type = "character", default = NULL, help = "ME-trait stats for dataset 3."),
+  make_option("--dataset3_label", type = "character", default = "dataset3", help = "Label for dataset 3 [default %default]."),
+  make_option("--p_thresh", type = "double", default = 0.05, help = "Module selection p threshold for trait mode [default %default]."),
+  make_option("--collections", type = "character", default = "all",
+              help = "Gene-set collections for GREAT and clusterProfiler: comma list of GO_BP,GO_MF,GO_CC,KEGG,Reactome,Hallmark, or 'all' [default %default]."),
+  make_option("--gene_set_cache", type = "character", default = NULL,
+              help = "Gene-set cache RDS (Entrez gene sets for all collections). Build once with --build_gene_set_cache_only TRUE."),
+  make_option("--build_gene_set_cache_only", type = "character", default = "FALSE",
+              help = "TRUE to build --gene_set_cache and exit. Needs internet for KEGG/MSigDB (run on a login node) [default %default]."),
+  make_option("--gene_set_source", type = "character", default = "native",
+              help = "Cache source: 'native' (GO org.Hs.eg.db, KEGG REST, reactome.db, Hallmark msigdbr) or 'msigdb' (all from one MSigDB release) [default %default]."),
+  make_option("--do_great", type = "character", default = "TRUE", help = "Run GREAT region-based enrichment [default %default]."),
+  make_option("--do_clusterprofiler", type = "character", default = "TRUE",
+              help = "Run clusterProfiler ORA with universe = Background_Genes [default %default]."),
+  make_option("--do_enrichr", type = "character", default = "TRUE", help = "Run Enrichr (needs internet) [default %default]."),
+  make_option("--tss_source", type = "character", default = "GREAT:hg38",
+              help = "GREAT gene/TSS set: 'GREAT:hg38' (GREAT v4 genes; comethyl default) or 'TxDb:hg38'. Should match script 15 [default %default]."),
+  make_option("--great_mode", type = "character", default = "basalPlusExt",
+              help = "GREAT association rule: basalPlusExt, twoClosest or oneClosest [default %default]."),
+  make_option("--basal_upstream", type = "double", default = 5000, help = "basalPlusExt upstream bp [default %default]."),
+  make_option("--basal_downstream", type = "double", default = 1000, help = "basalPlusExt downstream bp [default %default]."),
+  make_option("--extension", type = "double", default = 1e6, help = "Maximum domain extension bp [default %default]."),
+  make_option("--great_background", type = "character", default = "all",
+              help = "GREAT background regions: 'all' = every region incl. grey; 'assigned' = non-grey only [default %default]."),
+  make_option("--min_gene_set_size", type = "double", default = 5, help = "Minimum gene-set size for GREAT [default %default]."),
+  make_option("--max_gene_set_size", type = "double", default = Inf, help = "Maximum gene-set size for GREAT [default %default]."),
+  make_option("--great_engine", type = "character", default = "fast",
+              help = "'fast' = rGREAT's statistics with domain coverage computed once for all modules (seconds); 'rgreat' = call rGREAT::great() per module (minutes per module; for verification) [default %default]."),
+  make_option("--min_region_hits", type = "double", default = 5,
+              help = "GREAT: terms need >= this many module region hits to be FDR-tested and flagged (rGREAT getEnrichmentTable() default) [default %default]."),
+  make_option("--min_gene_hits", type = "double", default = 2, help = "GREAT: minimum term genes hit to flag a term [default %default]."),
+  make_option("--fdr_cut", type = "double", default = 0.05, help = "FDR threshold for significance flags [default %default]."),
+  make_option("--enrichr_dbs", type = "character",
+              default = "GO_Biological_Process_2025,GO_Molecular_Function_2025,GO_Cellular_Component_2025,KEGG_2021_Human,Reactome_Pathways_2024,MSigDB_Hallmark_2020,GWAS_Catalog_2025",
+              help = "Comma-separated Enrichr libraries; validated against Enrichr's current list [default %default]."),
+  make_option("--use_enrichr_background", type = "character", default = "TRUE",
+              help = "Use script 15's Background_Genes as the Enrichr background [default %default]."),
+  make_option("--min_bg_genes", type = "integer", default = 200L, help = "Minimum background size to use it [default %default]."),
+  make_option("--enrichr_retries", type = "integer", default = 3L, help = "Enrichr retries per module [default %default]."),
+  make_option("--enrichr_sleep", type = "double", default = 1, help = "Seconds between Enrichr calls [default %default]."),
+  make_option("--plot_p_col", type = "character", default = "p.adjust", help = "'p.adjust' or 'pvalue' for summary plots [default %default]."),
+  make_option("--plot_top_n", type = "integer", default = 10L, help = "Top N terms per module in summary plots [default %default]."),
+  make_option("--plot_sig_cutoff", type = "double", default = 0.05, help = "Significance cutoff for summary plots [default %default]."),
+  make_option("--plot_width", type = "double", default = 14, help = "Summary plot width, inches [default %default]."),
+  make_option("--plot_height", type = "double", default = 10, help = "Summary plot height, inches [default %default]."),
+  make_option("--helper_file", type = "character", default = NULL, help = "Path to helper.R [default: next to this script]."),
+  make_option("--do_kegg", type = "character", default = NULL, help = "Deprecated: FALSE drops KEGG from --collections."),
+  make_option("--do_go", type = "character", default = NULL, help = "Deprecated: FALSE drops GO_BP/MF/CC from --collections."),
+  make_option("--do_reactome", type = "character", default = NULL, help = "Deprecated: FALSE drops Reactome from --collections."),
+  make_option("--organism", type = "character", default = NULL, help = "Deprecated; ignored (KEGG comes from the gene-set cache).")
+)
+opt <- parse_args(OptionParser(option_list = option_list,
+                               description = "GREAT, clusterProfiler and Enrichr enrichment of consensus comethyl modules."))
+
+to_bool <- function(x, nm) {
+  v <- toupper(trimws(as.character(x)))
+  if (v %in% c("TRUE", "T", "1", "YES", "Y")) return(TRUE)
+  if (v %in% c("FALSE", "F", "0", "NO", "N")) return(FALSE)
+  stop("--", nm, " must be TRUE or FALSE (got '", x, "')", call. = FALSE)
+}
+for (nm in c("build_gene_set_cache_only", "do_great", "do_clusterprofiler", "do_enrichr", "use_enrichr_background")) {
+  opt[[nm]] <- to_bool(opt[[nm]], nm)
 }
 
-trim_or_null <- function(x) {
-  if (is.null(x) || is.na(x)) return(NULL)
-  x <- trimws(x); if (!nzchar(x)) return(NULL); x
+# ============================================================
+# 2) Helper
+# ============================================================
+script_dir <- tryCatch({
+  f <- sub("^--file=", "", grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE))
+  if (length(f) == 1) dirname(normalizePath(f)) else getwd()
+}, error = function(e) getwd())
+helper_file <- if (!is.null(opt$helper_file)) opt$helper_file else file.path(script_dir, "helper.R")
+if (!file.exists(helper_file)) stop("helper.R not found at: ", helper_file, call. = FALSE)
+source(helper_file)
+if (exists("setup_publication_font", mode = "function")) setup_publication_font()
+
+# ============================================================
+# 3) Collections / validation
+# ============================================================
+collections <- parse_collections(opt$collections)
+if (!is.null(opt$do_kegg) && !to_bool(opt$do_kegg, "do_kegg")) collections <- setdiff(collections, "KEGG")
+if (!is.null(opt$do_go) && !to_bool(opt$do_go, "do_go")) collections <- setdiff(collections, c("GO_BP", "GO_MF", "GO_CC"))
+if (!is.null(opt$do_reactome) && !to_bool(opt$do_reactome, "do_reactome")) collections <- setdiff(collections, "Reactome")
+if (!is.null(opt$organism)) message("Note: --organism is ignored (KEGG gene sets come from the gene-set cache).")
+opt$gene_set_source <- match.arg(opt$gene_set_source, c("native", "msigdb"))
+opt$great_mode <- match.arg(opt$great_mode, c("basalPlusExt", "twoClosest", "oneClosest"))
+opt$great_background <- match.arg(opt$great_background, c("all", "assigned"))
+opt$great_engine <- match.arg(opt$great_engine, c("fast", "rgreat"))
+if (!opt$plot_p_col %in% c("p.adjust", "pvalue")) stop("--plot_p_col must be 'p.adjust' or 'pvalue'", call. = FALSE)
+
+if (opt$build_gene_set_cache_only) {
+  stop_if_missing(opt$gene_set_cache, "--gene_set_cache")
+  build_gene_set_cache(collections, source = opt$gene_set_source, cache_file = opt$gene_set_cache)
+  message("Script 12b: gene-set cache built: ", opt$gene_set_cache)
+  quit(save = "no", status = 0)
 }
 
-split_csv <- function(x) {
-  if (is.null(x) || is.na(x) || !nzchar(x)) return(character(0))
-  trimws(strsplit(x, ",")[[1]])
+stop_if_missing(opt$project_root, "--project_root")
+stop_if_missing(opt$annotation_dir, "--annotation_dir")
+if (!dir.exists(opt$project_root)) stop("project_root not found: ", opt$project_root, call. = FALSE)
+if (!dir.exists(opt$annotation_dir)) stop("--annotation_dir not found: ", opt$annotation_dir, call. = FALSE)
+for (k in 1:3) {
+  f <- opt[[paste0("dataset", k, "_stats_file")]]
+  if (!is.null(f)) validate_file_exists(f, paste0("--dataset", k, "_stats_file"))
 }
-
-to_bool <- function(x, default = FALSE) {
-  if (is.null(x) || is.na(x) || !nzchar(x)) return(default)
-  tolower(trimws(x)) %in% c("true","t","1","yes","y")
+need_sets <- opt$do_great || opt$do_clusterprofiler
+gene_sets <- NULL
+if (need_sets) {
+  stop_if_missing(opt$gene_set_cache, "--gene_set_cache (needed for GREAT / clusterProfiler)")
+  gene_sets <- load_gene_set_cache(opt$gene_set_cache, collections)
 }
+if (length(collections) == 0 && need_sets) stop("No collections left to test.", call. = FALSE)
 
-stop_if_missing <- function(x, label) {
-  if (is.null(x) || !nzchar(x)) stop("Missing required argument: ", label, call. = FALSE)
-}
-
-validate_file_exists <- function(path, label) {
-  if (!file.exists(path)) stop(label, " not found: ", path, call. = FALSE)
-}
-
-validate_dir_exists <- function(path, label) {
-  if (!dir.exists(path)) stop(label, " not found: ", path, call. = FALSE)
-}
-
-safe_dir_create <- function(path) {
-  if (!dir.exists(path)) dir.create(path, recursive = TRUE, showWarnings = FALSE)
-}
-
-timestamp_now <- function() format(Sys.time(), "%Y-%m-%d %H:%M:%S")
-
-append_log <- function(logfile, ...) {
-  txt <- paste0("[", timestamp_now(), "] ", paste0(..., collapse = ""))
-  message(txt)
-  cat(txt, "\n", file = logfile, append = TRUE)
-}
-
-write_lines_safe <- function(x, file) {
-  writeLines(as.character(x), con = file, useBytes = TRUE)
-}
-
-qc_gene_list <- function(x, label = "genes") {
-  x0 <- x
-  x  <- trimws(as.character(x))
-  x  <- x[!is.na(x) & x != ""]
-  x  <- unique(x)
-  ok <- grepl("^[A-Za-z0-9._-]+$", x)
-  message(sprintf("[%s] input n=%d -> cleaned unique n=%d", label, length(x0), length(x)))
-  message(sprintf("[%s] invalid-format count=%d", label, sum(!ok)))
-  list(clean = x, ok = ok)
-}
-
-# ================================================================
-# File-or-directory resolver (same pattern as regular 12b)
-# ================================================================
+# ============================================================
+# 4) Module-selection helpers (as in the previous 12b)
+# ============================================================
 resolve_list_input <- function(path) {
-  if (is.null(path)) return(NULL)
-  if (file.exists(path) && !dir.exists(path))
-    return(setNames(normalizePath(path), ""))
+  if (is.null(path) || !nzchar(path)) return(NULL)
+  if (file.exists(path) && !dir.exists(path)) return(stats::setNames(normalizePath(path), ""))
   if (dir.exists(path)) {
-    txts  <- sort(list.files(path, pattern = "\\.txt$", full.names = TRUE))
-    if (length(txts) == 0)
-      stop("Directory has no .txt files: ", path, call. = FALSE)
-    stems <- tools::file_path_sans_ext(basename(txts))
-    return(setNames(normalizePath(txts), stems))
+    txts <- sort(list.files(path, pattern = "\\.txt$", full.names = TRUE))
+    if (length(txts) == 0) stop("Directory contains no .txt files: ", path, call. = FALSE)
+    return(stats::setNames(normalizePath(txts), tools::file_path_sans_ext(basename(txts))))
   }
   stop("Path does not exist: ", path, call. = FALSE)
 }
-
-read_list_file <- function(path) {
-  x <- readLines(path, warn = FALSE)
-  unique(trimws(x[nzchar(trimws(x))]))
+read_clean_txt_list <- function(path) {
+  x <- trimws(readLines(path, warn = FALSE)); x <- x[nzchar(x) & !grepl("^#", x)]; unique(x)
 }
-
-# ================================================================
-# Annotation loader
-# ================================================================
-load_annotation_files <- function(annotation_dir) {
-  af  <- file.path(annotation_dir, "Annotated_Regions.tsv")
-  glf <- file.path(annotation_dir, "Module_Gene_List.tsv")
-  smf <- file.path(annotation_dir, "Module_Gene_Summary.tsv")
-  bgf <- file.path(annotation_dir, "Background_Genes.tsv")
-
-  validate_file_exists(af,  "Annotated_Regions.tsv")
-  validate_file_exists(glf, "Module_Gene_List.tsv")
-  validate_file_exists(smf, "Module_Gene_Summary.tsv")
-
-  annotated  <- read.delim(af,  stringsAsFactors = FALSE, check.names = FALSE)
-  gene_list  <- read.delim(glf, stringsAsFactors = FALSE, check.names = FALSE)
-  summary    <- read.delim(smf, stringsAsFactors = FALSE, check.names = FALSE)
-
-  bg <- NULL
-  if (file.exists(bgf)) {
-    bg_df <- read.delim(bgf, stringsAsFactors = FALSE, check.names = FALSE)
-    if ("gene_symbol" %in% names(bg_df)) bg <- bg_df$gene_symbol
-  }
-
-  list(annotated = annotated, gene_list = gene_list,
-       summary = summary, background_genes = bg)
-}
-
-# ================================================================
-# Stats-based module selection
-# ================================================================
-standardize_stats_columns <- function(df, label) {
+read_stats_file <- function(path) {
+  ext <- tolower(tools::file_ext(path))
+  df <- switch(ext, xlsx = openxlsx::read.xlsx(path), xls = openxlsx::read.xlsx(path),
+               csv = utils::read.csv(path, check.names = FALSE),
+               utils::read.delim(path, check.names = FALSE))
   cn <- tolower(colnames(df))
-  for (col in c("module","trait")) {
-    if (!col %in% cn) stop(label, " must contain '", col, "' column.", call. = FALSE)
-    names(df)[match(col, cn)] <- col; cn <- tolower(colnames(df))
+  for (col in c("module", "trait")) {
+    if (!col %in% cn) stop("stats file must contain a ", col, " column: ", path, call. = FALSE)
+    names(df)[match(col, cn)] <- col
   }
-  p_cands <- c("p","pvalue","p.value","p_value")
-  p_hit   <- p_cands[p_cands %in% cn][1]
-  if (is.na(p_hit))
-    stop(label, " must have a p-value column.", call. = FALSE)
-  names(df)[match(p_hit, tolower(colnames(df)))] <- "p"
+  pc <- c("p", "pvalue", "p.value", "p_value")[c("p", "pvalue", "p.value", "p_value") %in% tolower(colnames(df))][1]
+  if (is.na(pc)) stop("stats file needs a p-value column (p/pvalue/p.value/p_value): ", path, call. = FALSE)
+  names(df)[match(pc, tolower(colnames(df)))] <- "p"
   df
 }
 
-read_stats_file <- function(path, label) {
-  ext <- tolower(tools::file_ext(path))
-  df  <- switch(ext,
-    xlsx = openxlsx::read.xlsx(path),
-    xls  = openxlsx::read.xlsx(path),
-    tsv  = , txt = read.delim(path, stringsAsFactors = FALSE, check.names = FALSE),
-    csv  = read.csv(path, stringsAsFactors = FALSE, check.names = FALSE),
-    stop("Unsupported stats file format: ", path, call. = FALSE)
-  )
-  standardize_stats_columns(df, label)
-}
-
-select_modules_from_stats <- function(stats_df, trait_list, p_thresh) {
-  stats_df %>%
-    dplyr::mutate(p = as.numeric(p)) %>%
-    dplyr::filter(!is.na(p), trait %in% trait_list, p <= p_thresh) %>%
-    dplyr::pull(module) %>% unique() %>% as.character()
-}
-
-# ================================================================
-# Gene list builder
-# ================================================================
-build_gene_vector <- function(gene_list_df, module_name) {
-  gene_list_df %>%
-    dplyr::filter(module == module_name) %>%
-    dplyr::pull(gene_symbol) %>%
-    as.character() %>% trimws() %>% unique() %>%
-    .[!is.na(.) & . != ""]
-}
-
-# ================================================================
-# KEGG enrichment
-# ================================================================
-run_kegg_clusterprofiler <- function(gene_symbols, out_prefix, organism = "hsa") {
-  gene_symbols <- qc_gene_list(gene_symbols, "KEGG")
-  if (length(gene_symbols) == 0) return(invisible(NULL))
-
-  gene_df <- suppressMessages(
-    clusterProfiler::bitr(gene_symbols, fromType = "SYMBOL",
-                           toType = "ENTREZID", OrgDb = org.Hs.eg.db)
-  )
-  if (is.null(gene_df) || nrow(gene_df) == 0) {
-    message("  [KEGG] No Entrez IDs mapped — skipping")
-    return(invisible(NULL))
+load_annotation_files <- function(annotation_dir) {
+  f <- function(x) file.path(annotation_dir, x)
+  for (x in c("Annotated_Regions.tsv", "Module_Gene_List.tsv", "Module_Gene_Summary.tsv", "Background_Genes.tsv")) {
+    validate_file_exists(f(x), x)
   }
-
-  kegg_res <- suppressMessages(
-    clusterProfiler::enrichKEGG(gene = unique(gene_df$ENTREZID),
-                                  organism = organism,
-                                  pvalueCutoff = 1, qvalueCutoff = 1)
-  )
-  df <- as.data.frame(kegg_res)
-  if (is.null(df) || nrow(df) == 0) return(invisible(NULL))
-
-  write.table(df, paste0(out_prefix, "_KEGG.tsv"), sep = "\t", quote = FALSE, row.names = FALSE)
-  openxlsx::write.xlsx(df, paste0(out_prefix, "_KEGG.xlsx"), rowNames = FALSE)
-
-  top <- df %>% dplyr::arrange(p.adjust) %>% dplyr::slice_head(n = min(25, nrow(df)))
-  if (nrow(top) > 0) {
-    top$Description <- factor(top$Description, levels = rev(top$Description))
-    p <- ggplot(top, aes(x = -log10(p.adjust), y = Description)) +
-      geom_point() + theme_bw(base_size = 12) +
-      labs(title = "Top KEGG pathways", x = "-log10(adj. p)", y = NULL)
-    ggsave(paste0(out_prefix, "_KEGG_dotplot.pdf"), plot = p, width = 9, height = 6)
+  regions <- utils::read.delim(f("Annotated_Regions.tsv"), stringsAsFactors = FALSE, check.names = FALSE,
+                               colClasses = c(chr = "character", module = "character"))
+  miss <- setdiff(c("RegionID", "chr", "start", "end", "module"), colnames(regions))
+  if (length(miss) > 0) stop("Annotated_Regions.tsv missing: ", paste(miss, collapse = ", "), call. = FALSE)
+  params <- NULL
+  if (file.exists(f("run_parameters.txt"))) {
+    p <- utils::read.delim(f("run_parameters.txt"), header = FALSE, stringsAsFactors = FALSE, quote = "")
+    params <- stats::setNames(as.character(p[[2]]), p[[1]])
   }
-  message("  [KEGG] Done: ", nrow(df), " pathways")
-  invisible(df)
+  list(regions = regions[, c("RegionID", "chr", "start", "end", "module")],
+       gene_list = utils::read.delim(f("Module_Gene_List.tsv"), stringsAsFactors = FALSE),
+       module_summary = utils::read.delim(f("Module_Gene_Summary.tsv"), stringsAsFactors = FALSE),
+       background_genes = utils::read.delim(f("Background_Genes.tsv"), stringsAsFactors = FALSE)$gene_symbol,
+       params = params)
 }
 
-# ================================================================
-# GO enrichment (BP, MF, CC)
-# ================================================================
-run_go_clusterprofiler <- function(gene_symbols, out_prefix) {
-  gene_symbols <- qc_gene_list(gene_symbols, "GO")
-  if (length(gene_symbols) == 0) return(invisible(NULL))
+# ============================================================
+# 5) Plot helpers (previous 12b dot-plot style; PDF via cairo + PNG)
+# ============================================================
+make_enrichment_dotplot <- function(df, title, source_tag = NULL, p_col_label = "adj. p",
+                                    size_label = "Gene Count", sig_cutoff = 0.05, top_n = 10,
+                                    max_chars = 55, plot_width = 14, plot_height = 10,
+                                    base_size = 13, file_stem = NULL) {
+  if (is.null(df) || nrow(df) == 0) { message("[plot] No data for: ", title); return(invisible(NULL)) }
+  df$Description <- ifelse(nchar(df$Description) > max_chars,
+                           paste0(substr(df$Description, 1, max_chars - 3), "..."), df$Description)
+  df <- df %>% dplyr::filter(!is.na(p_col_val), p_col_val <= sig_cutoff) %>%
+    dplyr::group_by(module) %>% dplyr::arrange(p_col_val, .by_group = TRUE) %>%
+    dplyr::slice_head(n = top_n) %>% dplyr::ungroup()
+  if (nrow(df) == 0) { message("[plot] No terms pass ", sig_cutoff, " for: ", title); return(invisible(NULL)) }
+  df <- df %>% dplyr::arrange(module, p_col_val) %>%
+    dplyr::mutate(Description = factor(Description, levels = rev(unique(Description))))
+  p <- ggplot(df, aes(x = module, y = Description, size = gene_count, fill = p_col_val)) +
+    geom_point(shape = 23, color = "grey30") +
+    scale_size(range = c(3, 10), name = size_label) +
+    scale_fill_gradient(low = "#B22222", high = "#FFC0CB", name = p_col_label,
+                        limits = c(0, sig_cutoff), oob = scales::squish) +
+    theme_bw(base_size = base_size) +
+    theme(axis.text.x = element_text(angle = 30, hjust = 1), axis.text.y = element_text(size = base_size - 1),
+          axis.title = element_blank(), panel.grid.major.x = element_blank(), panel.grid.minor = element_blank()) +
+    labs(title = title, subtitle = paste0("Top ", top_n, " terms per module | ", p_col_label, " <= ", sig_cutoff,
+                                          if (!is.null(source_tag)) paste0(" | Source: ", source_tag) else ""))
+  if (!is.null(file_stem)) save_annotation_plot(p, file_stem, plot_width, plot_height)
+  invisible(p)
+}
 
-  gene_df <- suppressMessages(
-    clusterProfiler::bitr(gene_symbols, fromType = "SYMBOL",
-                           toType = "ENTREZID", OrgDb = org.Hs.eg.db)
-  )
-  if (is.null(gene_df) || nrow(gene_df) == 0) {
-    message("  [GO] No Entrez IDs mapped — skipping")
-    return(invisible(NULL))
+write_tsv_xlsx <- function(df, stem) {
+  utils::write.table(df, paste0(stem, ".tsv"), sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+  openxlsx::write.xlsx(df, paste0(stem, ".xlsx"), rowNames = FALSE)
+}
+
+# ============================================================
+# 6) GREAT (region-based, offline)
+# ============================================================
+extended_tss <- NULL
+if (opt$do_great) {
+  extended_tss <- great_build_extended_tss(opt$tss_source, genome = "hg38", mode = opt$great_mode,
+                                           basal_upstream = opt$basal_upstream,
+                                           basal_downstream = opt$basal_downstream,
+                                           extension = opt$extension, verbose = TRUE)
+}
+
+# All selected collections combined into one gene-set list (one great() call
+# per module), names "<collection>::<term_id>", size-filtered.
+combined_gene_sets <- function(gs, collections, min_size, max_size, universe = NULL) {
+  out <- list()
+  for (coll in collections) {
+    s <- gs$collections[[coll]]
+    if (!is.null(universe)) s <- lapply(s, intersect, universe)
+    n <- lengths(s)
+    s <- s[n >= min_size & n <= max_size]
+    if (length(s) > 0) names(s) <- paste0(coll, "::", names(s))
+    out <- c(out, s)
   }
-  entrez_ids <- unique(gene_df$ENTREZID)
+  out
+}
 
-  for (ont in c("BP","MF","CC")) {
-    res <- tryCatch(
-      suppressMessages(
-        clusterProfiler::enrichGO(gene = entrez_ids, OrgDb = org.Hs.eg.db,
-                                   ont = ont, pvalueCutoff = 1, qvalueCutoff = 1,
-                                   readable = TRUE)
-      ),
-      error = function(e) { message("  [GO ", ont, "] Failed: ", conditionMessage(e)); NULL }
-    )
+# rGREAT::great() per module (verification engine). Returns rGREAT's full
+# table (no min-hit filter) plus the genes hit by the module.
+run_great_rgreat <- function(module_regions, background_gr, great_sets, ext, min_size) {
+  gr <- GenomicRanges::GRanges(module_regions$chr, IRanges::IRanges(module_regions$start, module_regions$end))
+  res <- rGREAT::great(gr, gene_sets = great_sets, extended_tss = ext, background = background_gr,
+                       exclude = NULL, min_gene_set_size = min_size, verbose = FALSE)
+  tb <- rGREAT::getEnrichmentTable(res, min_region_hits = 0)
+  mid <- GenomicRanges::GRanges(module_regions$chr,
+                                IRanges::IRanges(floor((module_regions$start + module_regions$end) / 2), width = 1))
+  attr(tb, "hit_genes") <- unique(ext$gene_id[S4Vectors::subjectHits(GenomicRanges::findOverlaps(mid, ext))])
+  tb
+}
+
+# Add collection / term name / genes, FDR within module x collection over
+# terms with >= min_region_hits (rGREAT getEnrichmentTable() convention).
+finish_great_table <- function(tb, great_sets, ext, gs, coll) {
+  hit_genes <- attr(tb, "hit_genes"); sym <- attr(ext, "symbol_map")
+  tb$collection <- sub("::.*$", "", tb$id)
+  d <- tb[tb$collection == coll, , drop = FALSE]
+  if (nrow(d) == 0) return(NULL)
+  d$term_id <- sub("^[^:]+::", "", d$id)
+  nm <- gs$term_names[[coll]][d$term_id]
+  d$Description <- ifelse(is.na(nm), d$term_id, unname(nm))
+  d$genes <- vapply(d$id, function(i) {
+    g <- intersect(great_sets[[i]], hit_genes); s2 <- sym[g]; s2[is.na(s2)] <- g[is.na(s2)]
+    paste(sort(unname(s2)), collapse = ",")
+  }, "")
+  tested <- d$observed_region_hits >= opt$min_region_hits
+  d$fdr <- NA_real_; d$fdr_hyper <- NA_real_
+  d$fdr[tested] <- stats::p.adjust(d$p_value[tested], "BH")
+  d$fdr_hyper[tested] <- stats::p.adjust(d$p_value_hyper[tested], "BH")
+  d$significant <- tested & !is.na(d$fdr) & d$fdr < opt$fdr_cut & d$observed_gene_hits >= opt$min_gene_hits
+  d <- d[order(is.na(d$fdr), d$fdr, d$p_value),
+         c("collection", "term_id", "Description", "genome_fraction", "observed_region_hits", "fold_enrichment",
+           "p_value", "fdr", "observed_gene_hits", "gene_set_size", "fold_enrichment_hyper", "p_value_hyper",
+           "fdr_hyper", "mean_tss_dist", "significant", "genes")]
+  rownames(d) <- NULL
+  d
+}
+
+# ============================================================
+# 7) clusterProfiler ORA with universe
+# ============================================================
+run_clusterprofiler_module <- function(gene_symbols, universe_entrez, gs, collections, out_prefix, log_fn) {
+  if (!requireNamespace("clusterProfiler", quietly = TRUE)) { log_fn("clusterProfiler not installed; skipping."); return(invisible(NULL)) }
+  fg <- symbols_to_entrez(gene_symbols, gs)
+  fg_e <- intersect(fg$entrez, universe_entrez)
+  log_fn("  clusterProfiler: ", fg$n_mapped, "/", fg$n_in, " genes mapped to Entrez; ", length(fg_e), " in universe")
+  if (length(fg_e) == 0) return(invisible(NULL))
+  eg2sym <- stats::setNames(names(gs$symbol_map), gs$symbol_map)
+  for (coll in collections) {
+    s <- gs$collections[[coll]]
+    t2g <- data.frame(term = rep(names(s), lengths(s)), gene = unlist(s, use.names = FALSE), stringsAsFactors = FALSE)
+    t2n <- data.frame(term = names(gs$term_names[[coll]]), name = unname(gs$term_names[[coll]]), stringsAsFactors = FALSE)
+    res <- tryCatch(suppressMessages(clusterProfiler::enricher(fg_e, TERM2GENE = t2g, TERM2NAME = t2n,
+                                                               universe = universe_entrez,
+                                                               pvalueCutoff = 1, qvalueCutoff = 1)),
+                    error = function(e) { log_fn("  ERROR clusterProfiler ", coll, ": ", conditionMessage(e)); NULL })
     if (is.null(res)) next
     df <- as.data.frame(res)
     if (nrow(df) == 0) next
-
-    write.table(df, paste0(out_prefix, "_GO_", ont, ".tsv"),
-                sep = "\t", quote = FALSE, row.names = FALSE)
-    openxlsx::write.xlsx(df, paste0(out_prefix, "_GO_", ont, ".xlsx"), rowNames = FALSE)
-
-    top <- df %>% dplyr::arrange(p.adjust) %>% dplyr::slice_head(n = min(25, nrow(df)))
-    if (nrow(top) > 0) {
-      top$Description <- factor(top$Description, levels = rev(top$Description))
-      p <- ggplot(top, aes(x = -log10(p.adjust), y = Description)) +
-        geom_point() + theme_bw(base_size = 12) +
-        labs(title = paste0("Top GO ", ont, " terms"), x = "-log10(adj. p)", y = NULL)
-      ggsave(paste0(out_prefix, "_GO_", ont, "_dotplot.pdf"), plot = p, width = 9, height = 6)
-    }
-    message("  [GO ", ont, "] Done: ", nrow(df), " terms")
+    df$geneSymbols <- vapply(strsplit(df$geneID, "/"), function(g) {
+      s2 <- eg2sym[g]; s2[is.na(s2)] <- g[is.na(s2)]; paste(unname(s2), collapse = "/")
+    }, "")
+    df$collection <- coll
+    write_tsv_xlsx(df, paste0(out_prefix, "_", coll))
   }
   invisible(NULL)
 }
 
-# ================================================================
-# Reactome enrichment
-# ================================================================
-run_reactome_clusterprofiler <- function(gene_symbols, out_prefix) {
-  if (!requireNamespace("ReactomePA", quietly = TRUE)) {
-    message("  [Reactome] ReactomePA not installed — skipping")
-    return(invisible(NULL))
-  }
-  gene_symbols <- qc_gene_list(gene_symbols, "Reactome")
-  if (length(gene_symbols) == 0) return(invisible(NULL))
-
-  gene_df <- suppressMessages(
-    clusterProfiler::bitr(gene_symbols, fromType = "SYMBOL",
-                           toType = "ENTREZID", OrgDb = org.Hs.eg.db)
-  )
-  if (is.null(gene_df) || nrow(gene_df) == 0) {
-    message("  [Reactome] No Entrez IDs mapped — skipping")
-    return(invisible(NULL))
-  }
-
-  res <- tryCatch(
-    suppressMessages(
-      ReactomePA::enrichPathway(gene = unique(gene_df$ENTREZID),
-                                 organism = "human", pvalueCutoff = 1,
-                                 qvalueCutoff = 1, readable = TRUE)
-    ),
-    error = function(e) { message("  [Reactome] Failed: ", conditionMessage(e)); NULL }
-  )
-  if (is.null(res)) return(invisible(NULL))
-  df <- as.data.frame(res)
-  if (nrow(df) == 0) return(invisible(NULL))
-
-  write.table(df, paste0(out_prefix, "_Reactome.tsv"),
-              sep = "\t", quote = FALSE, row.names = FALSE)
-  openxlsx::write.xlsx(df, paste0(out_prefix, "_Reactome.xlsx"), rowNames = FALSE)
-
-  top <- df %>% dplyr::arrange(p.adjust) %>% dplyr::slice_head(n = min(25, nrow(df)))
-  if (nrow(top) > 0) {
-    top$Description <- factor(top$Description, levels = rev(top$Description))
-    p <- ggplot(top, aes(x = -log10(p.adjust), y = Description)) +
-      geom_point() + theme_bw(base_size = 12) +
-      labs(title = "Top Reactome Pathways", x = "-log10(adj. p)", y = NULL)
-    ggsave(paste0(out_prefix, "_Reactome_dotplot.pdf"), plot = p, width = 9, height = 6)
-  }
-  message("  [Reactome] Done: ", nrow(df), " pathways")
-  invisible(df)
-}
-
-# ================================================================
-# Enrichr
-# ================================================================
+# ============================================================
+# 8) Enrichr (online)
+# ============================================================
 init_enrichr <- function() {
-  options(
-    enrichR.sites.base.address = "https://maayanlab.cloud/",
-    enrichR.base.address       = "https://maayanlab.cloud/Enrichr/",
-    speedrichr.base.address    = "https://maayanlab.cloud/speedrichr/api/",
-    enrichR.live               = TRUE,
-    enrichR.quiet              = TRUE,
-    modEnrichR.use             = TRUE,
-    enrichR.sites              = c("Enrichr", "FlyEnrichr", "WormEnrichr",
-                                   "YeastEnrichr", "FishEnrichr", "OxEnrichr")
-  )
+  options(enrichR.sites.base.address = "https://maayanlab.cloud/",
+          enrichR.base.address = "https://maayanlab.cloud/Enrichr/",
+          speedrichr.base.address = "https://maayanlab.cloud/speedrichr/api/",
+          enrichR.live = TRUE, enrichR.quiet = TRUE, modEnrichR.use = TRUE,
+          enrichR.sites = c("Enrichr", "FlyEnrichr", "WormEnrichr", "YeastEnrichr", "FishEnrichr", "OxEnrichr"))
+}
+# Thin wrappers so the API calls live in one place (defined only if not
+# already present, so a test harness sourced via --helper_file can mock them).
+if (!exists("enrichr_list_dbs", mode = "function")) {
+  enrichr_list_dbs <- function() { init_enrichr(); enrichR::listEnrichrDbs() }
+}
+if (!exists("enrichr_query", mode = "function")) {
+  enrichr_query <- function(genes, dbs, background = NULL) {
+    init_enrichr()
+    if (is.null(background)) enrichR::enrichr(genes = genes, databases = dbs)
+    else enrichR::enrichr(genes = genes, databases = dbs, background = background, include_overlap = TRUE)
+  }
 }
 
-validate_enrichr_dbs_safe <- function(dbs) {
-  if (!requireNamespace("enrichR", quietly = TRUE)) {
-    warning("enrichR not installed; using requested list as-is.")
-    return(list(ok = dbs, bad = character(0)))
+enrichr_preflight <- function(dbs, want_background) {
+  out <- list(ok = FALSE, dbs = character(0), background_supported = FALSE, reason = "")
+  if (!requireNamespace("enrichR", quietly = TRUE)) { out$reason <- "enrichR package not installed"; return(out) }
+  ver <- utils::packageVersion("enrichR")
+  out$background_supported <- ver >= "3.3" && "background" %in% names(formals(enrichR::enrichr))
+  if (want_background && !out$background_supported) {
+    out$reason <- paste0("enrichR ", ver, " has no background support (need >= 3.3)")
+    return(out)
   }
-  tryCatch({
-    init_enrichr(); Sys.sleep(0.5)
-    avail <- as.character(enrichR::listEnrichrDbs()$libraryName)
-    list(ok = intersect(dbs, avail), bad = setdiff(dbs, avail))
-  }, error = function(e) {
-    warning("Could not validate Enrichr DBs: ", conditionMessage(e))
-    list(ok = dbs, bad = character(0))
-  })
+  avail <- tryCatch(enrichr_list_dbs(), error = function(e) e)
+  if (inherits(avail, "error") || is.null(avail) || !"libraryName" %in% colnames(avail)) {
+    out$reason <- paste0("Enrichr unreachable: ",
+                         if (inherits(avail, "error")) conditionMessage(avail) else "no library list returned")
+    return(out)
+  }
+  out$dbs <- intersect(dbs, avail$libraryName)
+  out$dropped <- setdiff(dbs, avail$libraryName)
+  out$ok <- length(out$dbs) > 0
+  if (!out$ok) out$reason <- "none of the requested Enrichr libraries exist"
+  out
 }
-run_enrichr_simple <- function(gene_symbols, out_prefix, dbs,
-                               background_genes = NULL,
-                               retries          = 3,
-                               sleep_time       = 1) {
-  if (!requireNamespace("enrichR", quietly = TRUE)) {
-    warning("enrichR package not installed; skipping Enrichr.")
-    return(invisible(NULL))
-  }
 
-  fg_qc        <- qc_gene_list(gene_symbols, "foreground")
-  gene_symbols <- fg_qc$clean
-  if (length(gene_symbols) == 0) return(invisible(NULL))
-  if (length(dbs) == 0)          return(invisible(NULL))
-
-  if (!is.null(background_genes)) {
-    bg_qc            <- qc_gene_list(background_genes, "background")
-    background_genes <- bg_qc$clean
-    if (length(background_genes) == 0) background_genes <- NULL
-  }
-
-  init_enrichr()
-
+run_enrichr_module <- function(gene_symbols, background, dbs, out_prefix, mod_name, retries, sleep_time, log_fn) {
+  genes <- unique(trimws(gene_symbols)); genes <- genes[!is.na(genes) & nzchar(genes)]
+  if (length(genes) == 0) return(list(status = "skipped", detail = "no genes"))
   res <- NULL; last_err <- NULL
-
   for (attempt in seq_len(retries)) {
-    message("[Enrichr] Attempt ", attempt, " of ", retries,
-            " for: ", basename(out_prefix))
-
-    res <- tryCatch({
-      if (!is.null(background_genes) && length(background_genes) > 0) {
-        enrichR::enrichr(genes = gene_symbols, databases = dbs,
-                         background = background_genes)
-      } else {
-        enrichR::enrichr(genes = gene_symbols, databases = dbs)
-      }
-    }, error = function(e) { last_err <<- conditionMessage(e); NULL })
-
+    res <- tryCatch(enrichr_query(genes, dbs, background), error = function(e) { last_err <<- conditionMessage(e); NULL })
     if (!is.null(res) && length(res) > 0) break
-    if (attempt < retries) {
-      message("[Enrichr] Failed attempt ", attempt, ": ", last_err,
-              " — retrying in ", sleep_time, "s")
-      Sys.sleep(sleep_time)
-    }
+    if (attempt < retries) Sys.sleep(sleep_time)
   }
-
   if (is.null(res) || length(res) == 0) {
-    warning("Enrichr failed for ", out_prefix,
-            if (!is.null(last_err)) paste0(": ", last_err) else ".")
-    return(invisible(NULL))
+    log_fn("  ERROR Enrichr failed for ", mod_name, ": ", if (is.null(last_err)) "empty result" else last_err)
+    return(list(status = "failed", detail = if (is.null(last_err)) "empty result" else last_err))
   }
-
-  # ---- Save combined Excel workbook ----
-  wb <- openxlsx::createWorkbook(); wrote_any <- FALSE
-
+  wb <- openxlsx::createWorkbook(); n_rows <- 0
   for (nm in names(res)) {
     df <- res[[nm]]
     if (is.null(df) || nrow(df) == 0) next
+    if (!"Overlap" %in% colnames(df)) {  # Speedrichr without overlap: derive count from Genes
+      df$Overlap <- paste0(lengths(strsplit(as.character(df$Genes), ";")), "/NA")
+    }
     sheet <- substr(gsub("[^A-Za-z0-9]", "_", nm), 1, 31)
-    openxlsx::addWorksheet(wb, sheet)
-    openxlsx::writeData(wb, sheet, df)
-    wrote_any <- TRUE
+    openxlsx::addWorksheet(wb, sheet); openxlsx::writeData(wb, sheet, df)
+    n_rows <- n_rows + nrow(df)
+    pdf_stem <- paste0(out_prefix, "_enrichr_", substr(gsub("[^A-Za-z0-9]", "_", nm), 1, 60))
+    tryCatch({
+      p <- enrichR::plotEnrich(df, showTerms = 25, numChar = 75, y = "Count", orderBy = "P.value") +
+        ggplot2::ggtitle(paste(nm, "for", mod_name, "module"))
+      save_annotation_plot(p, pdf_stem, width = 15, height = 7, verbose = FALSE, png = FALSE)
+    }, error = function(e) log_fn("  WARNING Enrichr plot failed for ", nm, ": ", conditionMessage(e)))
   }
-
-  if (wrote_any) {
-    openxlsx::saveWorkbook(wb, paste0(out_prefix, "_enrichr.xlsx"), overwrite = TRUE)
-    message("[Enrichr] Saved: ", basename(out_prefix), "_enrichr.xlsx")
-
-    # ---- Per-database plotEnrich() PDFs ----
-    # Requires enrichR::plotEnrich(); mirrors the old plot_and_save() logic.
-    for (nm in names(res)) {
-      df <- res[[nm]]
-      if (is.null(df) || nrow(df) == 0) next
-
-      db_safe  <- substr(gsub("[^A-Za-z0-9]", "_", nm), 1, 60)
-      pdf_file <- paste0(out_prefix, "_enrichr_", db_safe, ".pdf")
-      mod_name <- basename(out_prefix)   # e.g. "skyblue2"
-
-      tryCatch({
-        grDevices::pdf(pdf_file, height = 7, width = 15)
-        print(
-          enrichR::plotEnrich(df, showTerms = 25, numChar = 75,
-                              y = "Count", orderBy = "P.value") +
-            ggplot2::ggtitle(paste(nm, "for", mod_name, "module"))
-        )
-        grDevices::dev.off()
-        message("[Enrichr] Plot saved: ", basename(pdf_file))
-      }, error = function(e) {
-        # Ensure graphics device is always closed on error
-        tryCatch(grDevices::dev.off(), error = function(e2) NULL)
-        message("[Enrichr] Plot failed for DB '", nm, "': ", conditionMessage(e))
-      })
-    }
-  }
-
+  if (n_rows > 0) openxlsx::saveWorkbook(wb, paste0(out_prefix, "_enrichr.xlsx"), overwrite = TRUE)
   Sys.sleep(sleep_time)
-  invisible(res)
+  list(status = "ok", detail = paste0(n_rows, " rows across ", length(res), " libraries"))
 }
 
-# ================================================================
-# Summary dotplot helpers (matching regular 12b)
-# ================================================================
-load_method_results <- function(out_dir, modules, file_suffix,
-                                 p_col = "p.adjust",
-                                 count_col = "Count",
-                                 desc_col = "Description") {
-  all_data <- data.frame()
-  for (m in modules) {
-    f  <- file.path(out_dir, paste0(m, file_suffix))
-    if (!file.exists(f)) next
-    df <- tryCatch(openxlsx::read.xlsx(f), error = function(e) NULL)
-    if (is.null(df) || nrow(df) == 0) next
-    actual_p <- if (p_col %in% colnames(df)) p_col else
-                if ("p.adjust" %in% colnames(df)) "p.adjust" else
-                if ("pvalue"   %in% colnames(df)) "pvalue" else { next }
-    needed <- c(desc_col, actual_p, count_col)
-    if (!all(needed %in% colnames(df))) next
-    df <- df %>%
-      dplyr::select(Description = !!desc_col,
-                    p_col_val   = !!actual_p,
-                    gene_count  = !!count_col) %>%
-      dplyr::mutate(module = m)
-    all_data <- dplyr::bind_rows(all_data, df)
-  }
-  all_data
-}
+# ============================================================
+# 9) Runner (12b run_enrichment_for_variant; consensus paths + multi-dataset selection)
+# ============================================================
+run_enrichment_consensus <- function(annotation_dir, variant_label, dataset_stats = list(),
+                                     module_list_file = NULL, trait_list = NULL, list_stem = "",
+                                     enrichr_state = NULL) {
+  files <- load_annotation_files(annotation_dir)
+  variant_name <- variant_label; region_label <- basename(dirname(annotation_dir))
+  cpg_label <- basename(dirname(dirname(annotation_dir)))
+  out_dir <- file.path(opt$project_root, "comethyl_output", "consensus", "16_enrichment", cpg_label, region_label, variant_name)
+  if (nzchar(list_stem)) out_dir <- file.path(out_dir, list_stem)
+  for (d in c("GREAT", "clusterProfiler", "Enrichr")) safe_dir_create(file.path(out_dir, d))
+  log_file <- file.path(out_dir, "run_log.txt")
+  L <- function(...) append_log(log_file, ...)
+  L("Starting enrichment for ", variant_label, if (nzchar(list_stem)) paste0(" / list ", list_stem) else "")
+  L("annotation_dir: ", annotation_dir)
+  L("collections: ", paste(collections, collapse = ", "), "; GREAT: ", opt$do_great,
+    "; clusterProfiler: ", opt$do_clusterprofiler, "; Enrichr: ", opt$do_enrichr)
 
-make_enrichment_dotplot <- function(df, title,
-                                     source_tag  = NULL,
-                                     p_col_label = "adj. p",
-                                     sig_cutoff  = 0.05,
-                                     top_n       = 10,
-                                     max_chars   = 55,
-                                     plot_width  = 14,
-                                     plot_height = 10,
-                                     base_size   = 13,
-                                     out_file    = NULL) {
-  if (nrow(df) == 0) { message("[plot] No data for: ", title); return(invisible(NULL)) }
-
-  df$Description <- ifelse(nchar(df$Description) > max_chars,
-                            paste0(substr(df$Description, 1, max_chars - 3), "..."),
-                            df$Description)
-
-  df <- df %>%
-    dplyr::filter(!is.na(p_col_val), p_col_val <= sig_cutoff) %>%
-    dplyr::group_by(module) %>%
-    dplyr::arrange(p_col_val, .by_group = TRUE) %>%
-    dplyr::slice_head(n = top_n) %>%
-    dplyr::ungroup()
-
-  if (nrow(df) == 0) {
-    message("[plot] No terms pass sig_cutoff=", sig_cutoff, " for: ", title)
-    return(invisible(NULL))
-  }
-
-  df <- df %>%
-    dplyr::arrange(module, p_col_val) %>%
-    dplyr::mutate(Description = factor(Description, levels = rev(unique(Description))))
-
-  subtitle_text <- paste0("Top ", top_n, " terms per module | ",
-                           p_col_label, " \u2264 ", sig_cutoff,
-                           if (!is.null(source_tag)) paste0(" | ", source_tag) else "")
-
-  p <- ggplot(df, aes(x = module, y = Description,
-                       size = gene_count, fill = p_col_val)) +
-    geom_point(shape = 23, color = "grey30") +
-    scale_size(range = c(3,10), name = "Gene Count") +
-    scale_fill_gradient(low = "#B22222", high = "#FFC0CB", name = p_col_label,
-                        limits = c(0, sig_cutoff), oob = scales::squish) +
-    theme_bw(base_size = base_size) +
-    theme(axis.text.x = element_text(angle = 30, hjust = 1),
-          axis.text.y = element_text(size = base_size - 1),
-          axis.title  = element_blank(),
-          panel.grid.major.x = element_blank(),
-          panel.grid.minor   = element_blank(),
-          legend.position    = "right") +
-    labs(title = title, subtitle = subtitle_text)
-
-  if (!is.null(out_file)) {
-    ggsave(out_file, plot = p, width = plot_width, height = plot_height,
-           dpi = 300, units = "in")
-    message("[plot] Saved: ", basename(out_file))
-  }
-  invisible(p)
-}
-
-plot_kegg_summary <- function(out_dir, modules, p_col = "p.adjust",
-                               sig_cutoff = 0.05, top_n = 10,
-                               plot_width = 14, plot_height = 10) {
-  p_col_label <- if (p_col == "p.adjust") "adj. p" else "raw p"
-  p_col_safe  <- gsub("\\.", "", p_col)
-  df <- load_method_results(out_dir, modules, "_KEGG.xlsx", p_col = p_col)
-  if (nrow(df) == 0) return(invisible(NULL))
-  make_enrichment_dotplot(df, title = "Top KEGG Pathways per Module",
-    source_tag = "clusterProfiler", p_col_label = p_col_label,
-    sig_cutoff = sig_cutoff, top_n = top_n,
-    plot_width = plot_width, plot_height = plot_height,
-    out_file = file.path(out_dir,
-      sprintf("Summary_KEGG_top%d_%s%s.pdf", top_n, p_col_safe, sig_cutoff)))
-}
-
-plot_go_summary <- function(out_dir, modules, p_col = "p.adjust",
-                             sig_cutoff = 0.05, top_n = 10,
-                             plot_width = 14, plot_height = 10) {
-  p_col_label <- if (p_col == "p.adjust") "adj. p" else "raw p"
-  p_col_safe  <- gsub("\\.", "", p_col)
-  for (ont in c("BP","MF","CC")) {
-    df <- load_method_results(out_dir, modules,
-                               paste0("_GO_", ont, ".xlsx"), p_col = p_col)
-    if (nrow(df) == 0) next
-    make_enrichment_dotplot(df, title = paste0("Top GO ", ont, " Terms per Module"),
-      source_tag = "clusterProfiler", p_col_label = p_col_label,
-      sig_cutoff = sig_cutoff, top_n = top_n,
-      plot_width = plot_width, plot_height = plot_height,
-      out_file = file.path(out_dir,
-        sprintf("Summary_GO_%s_top%d_%s%s.pdf", ont, top_n, p_col_safe, sig_cutoff)))
-  }
-}
-
-plot_reactome_summary <- function(out_dir, modules, p_col = "p.adjust",
-                                   sig_cutoff = 0.05, top_n = 10,
-                                   plot_width = 14, plot_height = 10) {
-  p_col_label <- if (p_col == "p.adjust") "adj. p" else "raw p"
-  p_col_safe  <- gsub("\\.", "", p_col)
-  df <- load_method_results(out_dir, modules, "_Reactome.xlsx", p_col = p_col)
-  if (nrow(df) == 0) return(invisible(NULL))
-  make_enrichment_dotplot(df, title = "Top Reactome Pathways per Module",
-    source_tag = "ReactomePA", p_col_label = p_col_label,
-    sig_cutoff = sig_cutoff, top_n = top_n,
-    plot_width = plot_width, plot_height = plot_height,
-    out_file = file.path(out_dir,
-      sprintf("Summary_Reactome_top%d_%s%s.pdf", top_n, p_col_safe, sig_cutoff)))
-}
-
-plot_enrichr_summary <- function(out_dir, modules, databases,
-                                  p_col = "p.adjust", sig_cutoff = 0.05,
-                                  top_n = 10, plot_width = 14, plot_height = 10) {
-  enrichr_p_col <- if (p_col == "p.adjust") "Adjusted.P.value" else "P.value"
-  p_col_label   <- if (p_col == "p.adjust") "adj. p" else "raw p"
-  p_col_safe    <- gsub("\\.", "", p_col)
-
-  for (db in databases) {
-    all_data <- data.frame()
-    for (m in modules) {
-      f <- file.path(out_dir, paste0(m, "_enrichr.xlsx"))
-      if (!file.exists(f)) next
-      sheet <- substr(gsub("[^A-Za-z0-9]","_", db), 1, 31)
-      df <- tryCatch(openxlsx::read.xlsx(f, sheet = sheet), error = function(e) NULL)
-      if (is.null(df) || nrow(df) == 0) next
-      actual_p <- if (enrichr_p_col %in% colnames(df)) enrichr_p_col else
-                  if ("Adjusted.P.value" %in% colnames(df)) "Adjusted.P.value" else "P.value"
-      if (!all(c("Term", actual_p, "Overlap") %in% colnames(df))) next
-      df$gene_count  <- suppressWarnings(as.integer(sub("/.*$","", as.character(df$Overlap))))
-      df$Description <- gsub(" \\(GO:\\d+\\)$","", df$Term)
-      df <- df %>%
-        dplyr::select(Description, p_col_val = !!actual_p, gene_count) %>%
-        dplyr::mutate(module = m)
-      all_data <- dplyr::bind_rows(all_data, df)
+  # 12a/12b GREAT settings consistency
+  pa <- files$params
+  if (!is.null(pa) && "great_tss_source" %in% names(pa)) {
+    cmp <- c(tss_source = opt$tss_source, mode = opt$great_mode)
+    got <- c(tss_source = pa[["great_tss_source"]], mode = pa[["great_mode"]])
+    if (!identical(tolower(unname(cmp)), tolower(unname(got)))) {
+      L("WARNING: GREAT settings differ from script 15 (15: ", paste(got, collapse = "/"), "; 12b: ",
+        paste(cmp, collapse = "/"), "). Term genes will not match 12a's gene columns.")
     }
-    if (nrow(all_data) == 0) next
-    db_safe  <- gsub("[^A-Za-z0-9]+","_", db)
-    make_enrichment_dotplot(all_data,
-      title      = paste0("Top Enrichr Terms: ", db),
-      source_tag = "Enrichr / maayanlab.cloud",
-      p_col_label = p_col_label,
-      sig_cutoff = sig_cutoff, top_n = top_n,
-      plot_width = plot_width, plot_height = plot_height,
-      out_file = file.path(out_dir,
-        sprintf("Summary_Enrichr_%s_top%d_%s%s.pdf", db_safe, top_n, p_col_safe, sig_cutoff)))
+  } else if (!is.null(pa) && "gene_assignment" %in% names(pa) && pa[["gene_assignment"]] != "great") {
+    L("WARNING: script 15 used gene_assignment = ", pa[["gene_assignment"]], "; Enrichr/clusterProfiler gene lists are not GREAT-based.")
   }
-}
 
-# ================================================================
-# Read arguments
-# ================================================================
-project_root      <- trim_or_null(get_arg("--project_root"))
-annotation_dir    <- trim_or_null(get_arg("--annotation_dir"))
-adjustment_version <- trim_or_null(get_arg("--adjustment_version", "unadjusted"))
-
-module_list_input <- trim_or_null(get_arg("--module_list_file"))
-trait_list_input  <- trim_or_null(get_arg("--trait_list_file"))
-
-dataset1_label      <- trim_or_null(get_arg("--dataset1_label", "dataset1"))
-dataset1_stats_file <- trim_or_null(get_arg("--dataset1_stats_file"))
-dataset2_label      <- trim_or_null(get_arg("--dataset2_label"))
-dataset2_stats_file <- trim_or_null(get_arg("--dataset2_stats_file"))
-dataset3_label      <- trim_or_null(get_arg("--dataset3_label"))
-dataset3_stats_file <- trim_or_null(get_arg("--dataset3_stats_file"))
-
-p_thresh    <- as.numeric(get_arg("--p_thresh", "0.05"))
-do_kegg     <- to_bool(get_arg("--do_kegg",     "true"),  default = TRUE)
-do_go       <- to_bool(get_arg("--do_go",       "true"),  default = TRUE)
-do_reactome <- to_bool(get_arg("--do_reactome", "true"),  default = TRUE)
-do_enrichr  <- to_bool(get_arg("--do_enrichr",  "false"), default = FALSE)
-
-enrichr_dbs <- split_csv(get_arg("--enrichr_dbs",
-  "GO_Biological_Process_2025,GO_Cellular_Component_2025,GO_Molecular_Function_2025"))
-
-organism               <- trim_or_null(get_arg("--organism", "hsa"))
-use_enrichr_background <- to_bool(get_arg("--use_enrichr_background","true"), TRUE)
-min_bg_genes           <- as.integer(get_arg("--min_bg_genes", "200"))
-enrichr_retries        <- as.integer(get_arg("--enrichr_retries", "3"))
-enrichr_sleep          <- as.numeric(get_arg("--enrichr_sleep", "1"))
-
-plot_p_col      <- trim_or_null(get_arg("--plot_p_col",      "p.adjust"))
-plot_top_n      <- as.integer(get_arg( "--plot_top_n",       "10"))
-plot_sig_cutoff <- as.numeric(get_arg( "--plot_sig_cutoff",  "0.05"))
-plot_width      <- as.numeric(get_arg( "--plot_width",       "14"))
-plot_height     <- as.numeric(get_arg( "--plot_height",      "10"))
-
-# ================================================================
-# Validate
-# ================================================================
-stop_if_missing(project_root,   "--project_root")
-stop_if_missing(annotation_dir, "--annotation_dir")
-
-validate_dir_exists(project_root,   "project_root")
-validate_dir_exists(annotation_dir, "annotation_dir")
-
-if (!plot_p_col %in% c("p.adjust","pvalue"))
-  stop("--plot_p_col must be 'p.adjust' or 'pvalue'", call. = FALSE)
-
-# Resolve list inputs
-module_list_files <- resolve_list_input(module_list_input)
-trait_list_files  <- resolve_list_input(trait_list_input)
-
-if (!is.null(module_list_files)) {
-  if (!is.null(trait_list_files))
-    message("Note: --module_list_file provided; --trait_list_file will be ignored.")
-} else {
-  if (is.null(trait_list_files))
-    stop("Provide --module_list_file OR --trait_list_file with stats_file(s).", call. = FALSE)
-  if (is.null(dataset1_stats_file))
-    stop("--dataset1_stats_file required when using --trait_list_file", call. = FALSE)
-  validate_file_exists(dataset1_stats_file, "--dataset1_stats_file")
-  if (!is.null(dataset2_stats_file)) validate_file_exists(dataset2_stats_file, "--dataset2_stats_file")
-  if (!is.null(dataset3_stats_file)) validate_file_exists(dataset3_stats_file, "--dataset3_stats_file")
-}
-
-if (do_enrichr) {
-  db_check    <- validate_enrichr_dbs_safe(enrichr_dbs)
-  if (length(db_check$bad) > 0)
-    warning("Dropping invalid Enrichr DBs: ", paste(db_check$bad, collapse = ", "))
-  enrichr_dbs <- db_check$ok
-  if (length(enrichr_dbs) == 0)
-    stop("No valid Enrichr DBs remain.", call. = FALSE)
-}
-
-setwd(project_root)
-
-# ================================================================
-# Derive cpg_label / region_label from annotation_dir path:
-#   .../15_module_annotation/<cpg_label>/<region_label>/<adjustment_version>/
-# ================================================================
-{
-  adj_dir      <- annotation_dir
-  region_label <- basename(dirname(adj_dir))
-  cpg_label    <- basename(dirname(dirname(adj_dir)))
-  message("Derived cpg_label    : ", cpg_label)
-  message("Derived region_label : ", region_label)
-}
-
-# ================================================================
-# Load annotation files
-# ================================================================
-anno_files       <- load_annotation_files(annotation_dir)
-gene_list_df     <- anno_files$gene_list
-module_summary   <- anno_files$summary
-background_genes <- anno_files$background_genes
-available_modules <- unique(as.character(gene_list_df$module))
-
-# ================================================================
-# Build run configs (stem × list approach matching regular 12b)
-# ================================================================
-run_configs <- list()
-
-if (!is.null(module_list_files)) {
-  for (i in seq_along(module_list_files)) {
-    run_configs[[length(run_configs)+1]] <- list(
-      stem             = names(module_list_files)[i],
-      module_list_file = unname(module_list_files[i]),
-      trait_list       = NULL
-    )
-  }
-} else {
-  for (i in seq_along(trait_list_files)) {
-    run_configs[[length(run_configs)+1]] <- list(
-      stem             = names(trait_list_files)[i],
-      module_list_file = NULL,
-      trait_list       = read_list_file(unname(trait_list_files[i]))
-    )
-  }
-}
-
-# ================================================================
-# Enrichr background prep (shared across all configs)
-# ================================================================
-bg_to_use <- NULL; bg_ok <- FALSE
-
-if (do_enrichr && isTRUE(use_enrichr_background) && !is.null(background_genes)) {
-  bg_clean  <- qc_gene_list(background_genes, "background")
-  mapped    <- AnnotationDbi::select(org.Hs.eg.db, keys = bg_clean,
-                                      keytype = "SYMBOL", columns = c("SYMBOL","ENTREZID"))
-  mapped_ok <- unique(mapped$SYMBOL[!is.na(mapped$ENTREZID)])
-  if (length(bg_clean) >= min_bg_genes) {
-    bg_to_use <- bg_clean; bg_ok <- TRUE
-    message("Enrichr background: ", length(bg_clean), " genes (",
-            round(100*length(mapped_ok)/length(bg_clean), 1), "% map to Entrez)")
+  # module selection
+  all_mods <- sort(setdiff(unique(files$regions$module), "grey"))
+  if (!is.null(module_list_file)) {
+    sel <- read_clean_txt_list(module_list_file); mode_sel <- "module_list_file"
+  } else if (!is.null(trait_list)) {
+    # union across datasets; trait names matched like resolveTraits()
+    sel <- character(0); src <- list()
+    for (ds in names(dataset_stats)) {
+      st <- read_stats_file(dataset_stats[[ds]])
+      rt <- resolveTraits(trait_list, unique(as.character(st$trait)), label = paste0(ds, " traits"), verbose = FALSE)
+      if (length(rt$missing) > 0) L("WARNING: ", ds, ": traits not in stats file: ", paste(rt$missing, collapse = ", "))
+      hit <- !is.na(st$p) & st$trait %in% rt$found & as.numeric(st$p) <= opt$p_thresh
+      mods <- unique(as.character(st$module[hit]))
+      L(ds, ": ", length(mods), " modules with p <= ", opt$p_thresh, " for ", length(rt$found), " traits")
+      if (any(hit)) src[[ds]] <- data.frame(module = as.character(st$module[hit]), dataset = ds,
+                                            trait = as.character(st$trait[hit]), p = as.numeric(st$p[hit]),
+                                            stringsAsFactors = FALSE)
+      sel <- union(sel, mods)
+    }
+    mode_sel <- "stats_based_union_across_datasets"
+  } else if (!is.null(opt$modules)) {
+    sel <- trimws(strsplit(opt$modules, ",")[[1]]); mode_sel <- "--modules"
   } else {
-    message("Background too small (", length(bg_clean), " < ", min_bg_genes,
-            ") — disabling Enrichr background mode.")
+    sel <- all_mods; mode_sel <- "all_modules"
   }
-}
+  missing_mods <- setdiff(sel, all_mods)
+  if (length(missing_mods) > 0) L("WARNING: modules not found (or grey) and skipped: ", paste(missing_mods, collapse = ", "))
+  sel <- intersect(sel, all_mods)
+  if (!is.null(trait_list) && length(src) > 0) {
+    src_df <- do.call(rbind, src); src_df <- src_df[src_df$module %in% sel, , drop = FALSE]
+    utils::write.table(src_df[order(src_df$module, src_df$dataset, src_df$p), ],
+                       file.path(out_dir, "selected_modules_source.tsv"), sep = "\t", quote = FALSE, row.names = FALSE)
+  }
+  write_lines_safe(sel, file.path(out_dir, "selected_modules.txt"))
+  utils::write.table(files$module_summary[files$module_summary$module %in% sel, ],
+                     file.path(out_dir, "selected_modules_summary.tsv"), sep = "\t", quote = FALSE, row.names = FALSE)
+  L("selection: ", mode_sel, "; ", length(sel), " modules: ", paste(sel, collapse = ", "))
+  if (length(sel) == 0) { L("No modules selected; nothing to do."); return(invisible(NULL)) }
 
-# ================================================================
-# Main loop: for each config
-# ================================================================
-for (cfg in run_configs) {
+  overview <- list()
 
-  stem_label <- if (nzchar(cfg$stem)) paste0(" [list: ", cfg$stem, "]") else ""
-  message("\n======================================================")
-  message("Running config", stem_label)
-  message("======================================================")
-
-  # ---- Output dir ----
-  pipeline_root <- file.path(project_root, "comethyl_output", "consensus")
-  base_out_dir  <- file.path(pipeline_root, "16_enrichment",
-                              cpg_label, region_label, adjustment_version)
-  out_dir <- if (nzchar(cfg$stem))
-    file.path(base_out_dir, cfg$stem) else base_out_dir
-  safe_dir_create(out_dir)
-
-  log_file    <- file.path(out_dir, "run_log.txt")
-  params_file <- file.path(out_dir, "run_parameters.txt")
-
-  append_log(log_file, "Starting enrichment", stem_label)
-  append_log(log_file, "annotation_dir: ", annotation_dir)
-  append_log(log_file, "out_dir: ", out_dir)
-
-  # ---- Module selection ----
-  selected_modules <- character(0)
-  selection_mode   <- NULL
-  module_source_rows <- list()
-
-  if (!is.null(cfg$module_list_file)) {
-    selected_modules <- read_list_file(cfg$module_list_file)
-    selection_mode   <- "module_list_file"
-    append_log(log_file, "Selection: explicit list (", length(selected_modules), " modules)")
-
-  } else {
-    selection_mode <- "stats_based_union_across_datasets"
-    trait_list     <- cfg$trait_list
-    append_log(log_file, "Trait list: ", paste(trait_list, collapse = ", "))
-
-    dataset_stats <- list()
-    if (!is.null(dataset1_stats_file)) dataset_stats[[dataset1_label]] <- dataset1_stats_file
-    if (!is.null(dataset2_stats_file)) dataset_stats[[dataset2_label]] <- dataset2_stats_file
-    if (!is.null(dataset3_stats_file)) dataset_stats[[dataset3_label]] <- dataset3_stats_file
-
-    for (ds_label in names(dataset_stats)) {
-      sf       <- dataset_stats[[ds_label]]
-      stats_df <- read_stats_file(sf, paste0(ds_label, " stats_file"))
-      mods     <- select_modules_from_stats(stats_df, trait_list = trait_list, p_thresh = p_thresh)
-      append_log(log_file, ds_label, ": ", length(mods), " modules selected (p <= ", p_thresh, ")")
-      for (m in mods)
-        module_source_rows[[length(module_source_rows)+1]] <-
-          data.frame(module = m, dataset = ds_label, stringsAsFactors = FALSE)
-      selected_modules <- union(selected_modules, mods)
+  # ---- GREAT ----
+  if (opt$do_great) {
+    bg_df <- if (opt$great_background == "all") files$regions else files$regions[files$regions$module != "grey", ]
+    bg_gr <- GenomicRanges::GRanges(bg_df$chr, IRanges::IRanges(bg_df$start, bg_df$end))
+    great_sets <- combined_gene_sets(gene_sets, collections, opt$min_gene_set_size, opt$max_gene_set_size,
+                                     universe = unique(extended_tss$gene_id))
+    L("GREAT: background = ", opt$great_background, " (", nrow(bg_df), " regions); ", length(great_sets),
+      " gene sets after size filter (", opt$min_gene_set_size, "-", opt$max_gene_set_size, ", genes in TSS set)")
+    t0 <- Sys.time()
+    tables <- list()
+    if (opt$great_engine == "fast") {
+      prep <- great_fast_prepare(extended_tss, bg_gr, great_sets, opt$min_gene_set_size, opt$max_gene_set_size)
+      tables <- great_fast_test(prep, split(files$regions[files$regions$module %in% sel, ],
+                                            files$regions$module[files$regions$module %in% sel]))
+    } else {
+      for (m in sel) {
+        tables[[m]] <- tryCatch(run_great_rgreat(files$regions[files$regions$module == m, ], bg_gr, great_sets,
+                                                 extended_tss, opt$min_gene_set_size),
+                                error = function(e) { L("  ERROR GREAT ", m, ": ", conditionMessage(e)); NULL })
+      }
+    }
+    L("GREAT (", opt$great_engine, " engine): ", length(sel), " modules in ",
+      round(as.numeric(difftime(Sys.time(), t0, units = "secs")), 1), " s")
+    for (m in names(tables)) {
+      if (is.null(tables[[m]])) next
+      for (coll in collections) {
+        d <- finish_great_table(tables[[m]], great_sets, extended_tss, gene_sets, coll)
+        if (is.null(d)) next
+        write_tsv_xlsx(d, file.path(out_dir, "GREAT", paste0(m, "_GREAT_", coll)))
+        overview[[length(overview) + 1]] <- data.frame(module = m, method = "GREAT", collection = coll,
+                                                       n_tested = sum(!is.na(d$fdr)), n_significant = sum(d$significant))
+      }
+    }
+    for (coll in collections) {
+      dd <- do.call(rbind, lapply(sel, function(m) {
+        f <- file.path(out_dir, "GREAT", paste0(m, "_GREAT_", coll, ".tsv"))
+        if (!file.exists(f)) return(NULL)
+        d <- utils::read.delim(f, stringsAsFactors = FALSE, quote = "")
+        d <- d[!is.na(d$fdr) & d$observed_gene_hits >= opt$min_gene_hits, ]
+        if (nrow(d) == 0) return(NULL)
+        data.frame(module = m, Description = d$Description,
+                   p_col_val = if (opt$plot_p_col == "p.adjust") d$fdr else d$p_value,
+                   gene_count = d$observed_region_hits)
+      }))
+      make_enrichment_dotplot(dd, paste0("Top GREAT ", coll, " terms per module"), source_tag = "rGREAT (local)",
+                              p_col_label = if (opt$plot_p_col == "p.adjust") "FDR" else "raw p",
+                              size_label = "Region hits", sig_cutoff = opt$plot_sig_cutoff, top_n = opt$plot_top_n,
+                              plot_width = opt$plot_width, plot_height = opt$plot_height,
+                              file_stem = file.path(out_dir, "GREAT", sprintf("Summary_GREAT_%s_top%d_%s%s", coll,
+                                opt$plot_top_n, gsub("\\.", "", opt$plot_p_col), opt$plot_sig_cutoff)))
     }
   }
 
-  # Filter to annotated, non-grey
-  selected_modules <- unique(as.character(selected_modules[nzchar(selected_modules)]))
-  not_found        <- setdiff(selected_modules, available_modules)
-  selected_modules <- intersect(selected_modules, available_modules)
-  selected_modules <- selected_modules[!grepl("^grey$", selected_modules, ignore.case = TRUE)]
+  # ---- background genes (shared by clusterProfiler and Enrichr) ----
+  bg_syms <- unique(files$background_genes[!is.na(files$background_genes) & nzchar(files$background_genes)])
+  L("Background genes (script 15, genes assigned to any region): ", length(bg_syms))
 
-  if (length(not_found) > 0)
-    append_log(log_file, "WARNING: modules not in annotation (skipped): ",
-               paste(not_found, collapse = ", "))
-  append_log(log_file, "Final selected modules (", length(selected_modules), "): ",
-             paste(sort(selected_modules), collapse = ", "))
-
-  # Save selection outputs
-  write_lines_safe(selected_modules, file.path(out_dir, "selected_modules.txt"))
-
-  if (length(module_source_rows) > 0) {
-    source_df <- dplyr::bind_rows(module_source_rows) %>%
-      dplyr::filter(module %in% selected_modules) %>%
-      dplyr::arrange(module, dataset)
-    write.table(source_df, file.path(out_dir, "selected_modules_source.tsv"),
-                sep = "\t", quote = FALSE, row.names = FALSE)
+  # ---- clusterProfiler ----
+  if (opt$do_clusterprofiler) {
+    uni <- symbols_to_entrez(bg_syms, gene_sets)
+    L("clusterProfiler universe: ", uni$n_mapped, "/", uni$n_in, " background genes mapped to Entrez")
+    for (m in sel) {
+      genes <- files$gene_list$gene_symbol[files$gene_list$module == m]
+      L("Module ", m, ": ", length(unique(genes)), " genes")
+      run_clusterprofiler_module(genes, uni$entrez, gene_sets, collections,
+                                 file.path(out_dir, "clusterProfiler", m), L)
+      for (coll in collections) {
+        f <- file.path(out_dir, "clusterProfiler", paste0(m, "_", coll, ".tsv"))
+        n_sig <- if (file.exists(f)) sum(utils::read.delim(f, quote = "")$p.adjust < opt$fdr_cut, na.rm = TRUE) else NA
+        overview[[length(overview) + 1]] <- data.frame(module = m, method = "clusterProfiler", collection = coll,
+                                                       n_tested = if (file.exists(f)) nrow(utils::read.delim(f, quote = "")) else 0,
+                                                       n_significant = n_sig)
+      }
+    }
+    for (coll in collections) {
+      dd <- do.call(rbind, lapply(sel, function(m) {
+        f <- file.path(out_dir, "clusterProfiler", paste0(m, "_", coll, ".tsv"))
+        if (!file.exists(f)) return(NULL)
+        d <- utils::read.delim(f, stringsAsFactors = FALSE, quote = "")
+        data.frame(module = m, Description = d$Description,
+                   p_col_val = if (opt$plot_p_col == "p.adjust") d$p.adjust else d$pvalue, gene_count = d$Count)
+      }))
+      make_enrichment_dotplot(dd, paste0("Top ", coll, " terms per module"), source_tag = "clusterProfiler (universe = background)",
+                              p_col_label = if (opt$plot_p_col == "p.adjust") "adj. p" else "raw p",
+                              sig_cutoff = opt$plot_sig_cutoff, top_n = opt$plot_top_n,
+                              plot_width = opt$plot_width, plot_height = opt$plot_height,
+                              file_stem = file.path(out_dir, "clusterProfiler", sprintf("Summary_%s_top%d_%s%s", coll,
+                                opt$plot_top_n, gsub("\\.", "", opt$plot_p_col), opt$plot_sig_cutoff)))
+    }
   }
 
-  sel_summary <- module_summary %>% dplyr::filter(module %in% selected_modules)
-  write.table(sel_summary, file.path(out_dir, "selected_modules_summary.tsv"),
-              sep = "\t", quote = FALSE, row.names = FALSE)
-
-  if (length(selected_modules) == 0) {
-    append_log(log_file, "No modules selected — skipping enrichment.")
-    next
+  # ---- Enrichr ----
+  if (opt$do_enrichr) {
+    status <- list()
+    if (!isTRUE(enrichr_state$ok)) {
+      L("ERROR: Enrichr skipped -- ", enrichr_state$reason)
+      status[[1]] <- data.frame(module = sel, status = "not_run", detail = enrichr_state$reason)
+    } else {
+      bg_use <- NULL
+      if (opt$use_enrichr_background) {
+        if (length(bg_syms) >= opt$min_bg_genes) bg_use <- bg_syms
+        else L("WARNING: background has ", length(bg_syms), " genes (< ", opt$min_bg_genes, "); Enrichr runs WITHOUT background")
+      }
+      L("Enrichr: libraries = ", paste(enrichr_state$dbs, collapse = ", "),
+        "; background = ", if (is.null(bg_use)) "none" else paste0(length(bg_use), " genes"))
+      for (m in sel) {
+        genes <- files$gene_list$gene_symbol[files$gene_list$module == m]
+        r <- run_enrichr_module(genes, bg_use, enrichr_state$dbs, file.path(out_dir, "Enrichr", m), m,
+                                opt$enrichr_retries, opt$enrichr_sleep, L)
+        status[[length(status) + 1]] <- data.frame(module = m, status = r$status, detail = r$detail,
+                                                   background_used = !is.null(bg_use))
+      }
+      for (db in enrichr_state$dbs) {
+        sheet <- substr(gsub("[^A-Za-z0-9]", "_", db), 1, 31)
+        dd <- do.call(rbind, lapply(sel, function(m) {
+          f <- file.path(out_dir, "Enrichr", paste0(m, "_enrichr.xlsx"))
+          if (!file.exists(f) || !sheet %in% openxlsx::getSheetNames(f)) return(NULL)
+          d <- openxlsx::read.xlsx(f, sheet = sheet)
+          pc <- if (opt$plot_p_col == "p.adjust") "Adjusted.P.value" else "P.value"
+          data.frame(module = m, Description = gsub(" \\(GO:\\d+\\)$", "", d$Term),
+                     p_col_val = as.numeric(d[[pc]]),
+                     gene_count = suppressWarnings(as.integer(sub("/.*$", "", as.character(d$Overlap)))))
+        }))
+        make_enrichment_dotplot(dd, paste0("Top Enrichr terms: ", db), source_tag = "Enrichr / maayanlab.cloud",
+                                p_col_label = if (opt$plot_p_col == "p.adjust") "adj. p" else "raw p",
+                                sig_cutoff = opt$plot_sig_cutoff, top_n = opt$plot_top_n,
+                                plot_width = opt$plot_width, plot_height = opt$plot_height,
+                                file_stem = file.path(out_dir, "Enrichr", sprintf("Summary_Enrichr_%s_top%d_%s%s",
+                                  gsub("[^A-Za-z0-9]+", "_", db), opt$plot_top_n, gsub("\\.", "", opt$plot_p_col), opt$plot_sig_cutoff)))
+      }
+    }
+    st <- do.call(rbind, status)
+    utils::write.table(st, file.path(out_dir, "Enrichr", "enrichr_status.tsv"), sep = "\t", quote = FALSE, row.names = FALSE)
+    n_bad <- sum(st$status != "ok")
+    if (n_bad > 0) L("ERROR: Enrichr did not complete for ", n_bad, " of ", nrow(st), " modules -- see Enrichr/enrichr_status.tsv")
   }
 
-  # ---- Per-module enrichment ----
-  for (m in selected_modules) {
-    gene_vec   <- build_gene_vector(gene_list_df, m)
-    out_prefix <- file.path(out_dir, m)
-
-    append_log(log_file, "Module ", m, ": ", length(gene_vec), " genes")
-    message("\n--- Module: ", m, " (", length(gene_vec), " genes) ---")
-
-    if (do_kegg)
-      tryCatch(run_kegg_clusterprofiler(gene_vec, out_prefix, organism),
-               error = function(e) append_log(log_file, "KEGG failed [", m, "]: ", conditionMessage(e)))
-
-    if (do_go)
-      tryCatch(run_go_clusterprofiler(gene_vec, out_prefix),
-               error = function(e) append_log(log_file, "GO failed [", m, "]: ", conditionMessage(e)))
-
-    if (do_reactome)
-      tryCatch(run_reactome_clusterprofiler(gene_vec, out_prefix),
-               error = function(e) append_log(log_file, "Reactome failed [", m, "]: ", conditionMessage(e)))
-
-    if (do_enrichr)
-      tryCatch(run_enrichr_simple(gene_vec, out_prefix, enrichr_dbs,
-                                   background_genes = if (bg_ok) bg_to_use else NULL,
-                                   retries = enrichr_retries, sleep_time = enrichr_sleep),
-               error = function(e) append_log(log_file, "Enrichr failed [", m, "]: ", conditionMessage(e)))
+  if (length(overview) > 0) {
+    utils::write.table(do.call(rbind, overview), file.path(out_dir, "enrichment_overview.tsv"),
+                       sep = "\t", quote = FALSE, row.names = FALSE)
   }
 
-  # ---- Summary dotplots ----
-  message("\n--- Summary plots ---")
-  if (do_kegg)     plot_kegg_summary(out_dir, selected_modules, p_col = plot_p_col,
-                                      sig_cutoff = plot_sig_cutoff, top_n = plot_top_n,
-                                      plot_width = plot_width, plot_height = plot_height)
-  if (do_go)       plot_go_summary(out_dir, selected_modules, p_col = plot_p_col,
-                                    sig_cutoff = plot_sig_cutoff, top_n = plot_top_n,
-                                    plot_width = plot_width, plot_height = plot_height)
-  if (do_reactome) plot_reactome_summary(out_dir, selected_modules, p_col = plot_p_col,
-                                          sig_cutoff = plot_sig_cutoff, top_n = plot_top_n,
-                                          plot_width = plot_width, plot_height = plot_height)
-  if (do_enrichr && length(enrichr_dbs) > 0)
-                   plot_enrichr_summary(out_dir, selected_modules, enrichr_dbs,
-                                         p_col = plot_p_col, sig_cutoff = plot_sig_cutoff,
-                                         top_n = plot_top_n, plot_width = plot_width,
-                                         plot_height = plot_height)
-
-  # ---- Run parameters ----
-  write_lines_safe(c(
-    paste0("timestamp\t",              timestamp_now()),
-    paste0("project_root\t",           project_root),
-    paste0("annotation_dir\t",         annotation_dir),
-    paste0("adjustment_version\t",     adjustment_version),
-    paste0("cpg_label\t",              cpg_label),
-    paste0("region_label\t",           region_label),
-    paste0("list_stem\t",              cfg$stem),
-    paste0("selection_mode\t",         selection_mode),
-    paste0("module_list_file\t",       ifelse(is.null(cfg$module_list_file),"", cfg$module_list_file)),
-    paste0("trait_list_file\t",        ifelse(is.null(trait_list_input),"", trait_list_input)),
-    paste0("dataset1_label\t",         ifelse(is.null(dataset1_label),"", dataset1_label)),
-    paste0("dataset1_stats_file\t",    ifelse(is.null(dataset1_stats_file),"", dataset1_stats_file)),
-    paste0("dataset2_label\t",         ifelse(is.null(dataset2_label),"", dataset2_label)),
-    paste0("dataset2_stats_file\t",    ifelse(is.null(dataset2_stats_file),"", dataset2_stats_file)),
-    paste0("dataset3_label\t",         ifelse(is.null(dataset3_label),"", dataset3_label)),
-    paste0("dataset3_stats_file\t",    ifelse(is.null(dataset3_stats_file),"", dataset3_stats_file)),
-    paste0("p_thresh\t",               p_thresh),
-    paste0("do_kegg\t",                do_kegg),
-    paste0("do_go\t",                  do_go),
-    paste0("do_reactome\t",            do_reactome),
-    paste0("do_enrichr\t",             do_enrichr),
-    paste0("organism\t",               organism),
-    paste0("enrichr_dbs\t",            paste(enrichr_dbs, collapse = ",")),
-    paste0("use_enrichr_background\t", use_enrichr_background),
-    paste0("background_ok\t",          bg_ok),
-    paste0("min_bg_genes\t",           min_bg_genes),
-    paste0("enrichr_retries\t",        enrichr_retries),
-    paste0("enrichr_sleep\t",          enrichr_sleep),
-    paste0("plot_p_col\t",             plot_p_col),
-    paste0("plot_top_n\t",             plot_top_n),
-    paste0("plot_sig_cutoff\t",        plot_sig_cutoff),
-    paste0("plot_width\t",             plot_width),
-    paste0("plot_height\t",            plot_height),
-    paste0("n_selected_modules\t",     length(selected_modules)),
-    paste0("selected_modules\t",       paste(sort(selected_modules), collapse = ", ")),
-    paste0("out_dir\t",                out_dir)
-  ), params_file)
-
-  append_log(log_file, "Finished config", stem_label)
+  params <- c(paste0("timestamp\t", timestamp_now()), paste0("variant_label\t", variant_label), paste0("pipeline\tconsensus"),
+              paste0("annotation_dir\t", annotation_dir),
+              paste0("dataset_stats\t", paste(names(dataset_stats), unlist(dataset_stats), sep = "=", collapse = ";")),
+              paste0("list_stem\t", list_stem), paste0("selection_mode\t", mode_sel),
+              paste0("n_selected_modules\t", length(sel)), paste0("collections\t", paste(collections, collapse = ",")),
+              paste0(names(opt), "\t", vapply(opt, function(x) if (is.null(x)) "" else paste(x, collapse = ","), "")),
+              if (!is.null(gene_sets)) paste0("gene_sets_", names(gene_sets$meta), "\t",
+                                              vapply(gene_sets$meta, function(x) paste(x, collapse = ","), "")) else character(0),
+              if (!is.null(extended_tss)) paste0("great_", names(attr(extended_tss, "great_params")), "\t",
+                                                 unlist(attr(extended_tss, "great_params"))) else character(0),
+              if (opt$do_enrichr) paste0("enrichr_status\t", if (isTRUE(enrichr_state$ok)) "ok" else enrichr_state$reason) else character(0))
+  write_lines_safe(params, file.path(out_dir, "run_parameters.txt"))
+  write_session_info(file.path(out_dir, "session_info.txt"),
+                     extra_files = c(list(gene_set_cache = opt$gene_set_cache), dataset_stats, list(
+                                        module_list_file = module_list_file)))
+  L("Finished enrichment for ", variant_label)
+  invisible(out_dir)
 }
 
-writeLines(capture.output(sessionInfo()),
-           con = file.path(
-             file.path(project_root, "comethyl_output", "consensus",
-                       "16_enrichment", cpg_label, region_label, adjustment_version),
-             "sessionInfo.txt"))
+# ============================================================
+# 10) Enrichr preflight (once), run configs x variants
+# ============================================================
+enrichr_state <- NULL
+if (opt$do_enrichr) {
+  enrichr_state <- enrichr_preflight(trimws(strsplit(opt$enrichr_dbs, ",")[[1]]), opt$use_enrichr_background)
+  if (!enrichr_state$ok) {
+    message("\n*** ENRICHR WILL NOT RUN: ", enrichr_state$reason, " ***\n")
+  } else if (length(enrichr_state$dropped) > 0) {
+    message("Enrichr: dropping unknown libraries: ", paste(enrichr_state$dropped, collapse = ", "))
+  }
+}
+
+module_list_files <- resolve_list_input(opt$module_list_file)
+trait_list_files <- resolve_list_input(opt$trait_list_file)
+configs <- list()
+if (!is.null(module_list_files)) {
+  for (i in seq_along(module_list_files)) configs[[i]] <- list(stem = names(module_list_files)[i],
+                                                             module_list_file = unname(module_list_files[i]), trait_list = NULL)
+} else if (!is.null(trait_list_files)) {
+  if (is.null(opt$dataset1_stats_file)) stop("--dataset1_stats_file is required with --trait_list_file.", call. = FALSE)
+  for (i in seq_along(trait_list_files)) configs[[i]] <- list(stem = names(trait_list_files)[i], module_list_file = NULL,
+                                                            trait_list = read_clean_txt_list(unname(trait_list_files[i])))
+} else {
+  configs[[1]] <- list(stem = "", module_list_file = NULL, trait_list = NULL)
+}
+
+# One annotation folder per run (consensus modules are shared across datasets).
+dataset_stats <- list()
+for (k in 1:3) {
+  f <- opt[[paste0("dataset", k, "_stats_file")]]
+  if (!is.null(f)) dataset_stats[[opt[[paste0("dataset", k, "_label")]]]] <- normalizePath(f)
+}
+if (anyDuplicated(names(dataset_stats))) stop("--dataset*_label values must be unique.", call. = FALSE)
+adj_label <- if (!is.null(opt$adjustment_version)) opt$adjustment_version else basename(normalizePath(opt$annotation_dir))
+for (cfg in configs) {
+  run_enrichment_consensus(opt$annotation_dir, adj_label, dataset_stats = dataset_stats,
+                           module_list_file = cfg$module_list_file, trait_list = cfg$trait_list,
+                           list_stem = cfg$stem, enrichr_state = enrichr_state)
+}
 
 message("Script 16 complete: consensus module enrichment finished")

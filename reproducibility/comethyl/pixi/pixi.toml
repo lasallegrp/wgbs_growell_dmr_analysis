@@ -1,5 +1,5 @@
 [workspace]
-name = "growell-wgbs-comethyl"
+name = "growell_wgbs_comethyl"
 version = "0.1.0"
 authors = ["George Eusebio Kuodza <gekuodza@health.ucdavis.edu>"]
 channels = ["conda-forge", "bioconda"]
@@ -49,11 +49,12 @@ bioconductor-fgsea = "*"
 bioconductor-genomicranges = "*"
 bioconductor-rgreat = "*"
 bioconductor-reactomepa = "*"
-"bioconductor-reactome.db" = "*"
+"bioconductor-reactome.db" = ">=1.86.2,<2"
 r-ggdendro = ">=0.2.0,<0.3"
 "r-r.devices" = ">=2.17.2,<3"
 r-rlist = ">=0.4.6.2,<0.5"
 r-showtext = ">=0.9_7,<0.10"
 r-sysfonts = ">=0.8.9,<0.9"
-r-ggsci = ">=3.2.0,<4"
-bioconductor-rrvgo = ">=1.14.0,<2"
+r-ggtext = ">=0.1.2,<0.2"
+r-psych = ">=2.5.6,<3"
+r-msigdbr = ">=25.1.1,<26"

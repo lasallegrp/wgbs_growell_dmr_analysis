@@ -75,6 +75,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/noarch/bioconductor-protgenerics-1.30.0-r42hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/bioconductor-qvalue-2.30.0-r42hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-64/bioconductor-rbgl-1.74.0-r42hf17093f_1.tar.bz2
+      - conda: https://conda.anaconda.org/bioconda/noarch/bioconductor-reactome.db-1.82.0-r42hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/bioconductor-regioner-1.30.0-r42hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-64/bioconductor-rgreat-2.0.0-r42hf17093f_1.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-64/bioconductor-rhdf5-2.42.0-r42h20ea6f5_2.tar.bz2
@@ -189,6 +190,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/r-aplot-0.2.3-r42hc72bb7e_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/r-askpass-1.2.0-r42h57805ef_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/r-assertthat-0.2.1-r42hc72bb7e_4.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/r-babelgene-22.9-r42hc72bb7e_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/r-backports-1.5.0-r42hb1dbf0f_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/r-base-4.2.3-he516476_14.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/r-base64-2.0.1-r42ha770c72_1.tar.bz2
@@ -326,6 +328,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/r-mgcv-1.9_1-r42h316c678_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/r-mime-0.12-r42h57805ef_2.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/r-modelr-0.1.11-r42hc72bb7e_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/r-msigdbr-7.5.1-r42hc72bb7e_2.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/r-munsell-0.5.1-r42hc72bb7e_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/r-mvtnorm-1.2_5-r42hc29710b_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/r-nlme-3.1_165-r42hbcb9c34_0.conda
@@ -547,6 +550,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/noarch/bioconductor-protgenerics-1.30.0-r42hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/bioconductor-qvalue-2.30.0-r42hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-64/bioconductor-rbgl-1.74.0-r42hc0ef7c4_1.tar.bz2
+      - conda: https://conda.anaconda.org/bioconda/noarch/bioconductor-reactome.db-1.82.0-r42hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/bioconductor-regioner-1.30.0-r42hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-64/bioconductor-rgreat-2.0.0-r42hc0ef7c4_1.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-64/bioconductor-rhdf5-2.42.0-r42hfab559d_2.tar.bz2
@@ -675,6 +679,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/r-aplot-0.2.3-r42hc72bb7e_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/r-askpass-1.2.0-r42h6dc245f_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/r-assertthat-0.2.1-r42hc72bb7e_4.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/r-babelgene-22.9-r42hc72bb7e_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/r-backports-1.5.0-r42h6b9d099_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/r-base-4.2.3-h2f142dd_14.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/r-base64-2.0.1-r42ha770c72_1.tar.bz2
@@ -812,6 +817,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-64/r-mgcv-1.9_1-r42hc8b66e8_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/r-mime-0.12-r42h6dc245f_2.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/r-modelr-0.1.11-r42hc72bb7e_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/r-msigdbr-7.5.1-r42hc72bb7e_2.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/r-munsell-0.5.1-r42hc72bb7e_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/r-mvtnorm-1.2_5-r42h1a5884e_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/r-nlme-3.1_165-r42h9612530_0.conda
@@ -2446,6 +2452,17 @@ packages:
   license: Artistic-2.0
   size: 2789385
   timestamp: 1685273625434
+- conda: https://conda.anaconda.org/bioconda/noarch/bioconductor-reactome.db-1.82.0-r42hdfd78af_0.tar.bz2
+  sha256: e468261bd84bb2b955973dd6396cac4c422842153a9053c477832bfec8463dac
+  md5: 48592033c83c76fbe48d183bca94048d
+  depends:
+  - bioconductor-annotationdbi >=1.60.0,<1.61.0
+  - bioconductor-data-packages >=20221103
+  - curl
+  - r-base >=4.2,<4.3.0a0
+  license: CC BY 4.0
+  size: 8392
+  timestamp: 1667812920586
 - conda: https://conda.anaconda.org/bioconda/noarch/bioconductor-regioner-1.30.0-r42hdfd78af_0.tar.bz2
   sha256: d7d92bc069c357fefc21a259d0754879a757b602877e3ae85f71d92cee6dfa32
   md5: 9bbf907f0bafbe8b1d6ea2688f753063
@@ -5127,6 +5144,17 @@ packages:
   license_family: GPL3
   size: 71220
   timestamp: 1686752196023
+- conda: https://conda.anaconda.org/conda-forge/noarch/r-babelgene-22.9-r42hc72bb7e_2.conda
+  sha256: a18e8904df1f94de419095180d15d2de068344d20d5dde8fa7e1c2f4d727f9b0
+  md5: 6c01d4a3975a7a351404fb966ef04768
+  depends:
+  - r-base >=4.2,<4.3.0a0
+  - r-dplyr
+  - r-rlang
+  license: MIT
+  license_family: MIT
+  size: 3660175
+  timestamp: 1687027965228
 - conda: https://conda.anaconda.org/conda-forge/linux-64/r-backports-1.5.0-r42hb1dbf0f_0.conda
   sha256: 7a1c7b393f627a073dd2ccc9201dc749b6abea633dda499384bf69cefe096751
   md5: d879e1fbd80113312364a5db3682c789
@@ -7614,6 +7642,21 @@ packages:
   license_family: GPL3
   size: 220012
   timestamp: 1686832365471
+- conda: https://conda.anaconda.org/conda-forge/noarch/r-msigdbr-7.5.1-r42hc72bb7e_2.conda
+  sha256: 77716ce049a390ffa6130bf952a147a3fa5875eae542278541a548e57341dba8
+  md5: fb4e00c0ae27675015cbaad6df237541
+  depends:
+  - r-babelgene
+  - r-base >=4.2,<4.3.0a0
+  - r-dplyr >=0.7.0
+  - r-magrittr
+  - r-rlang
+  - r-tibble
+  - r-tidyselect
+  license: MIT
+  license_family: MIT
+  size: 6155015
+  timestamp: 1687123038031
 - conda: https://conda.anaconda.org/conda-forge/noarch/r-munsell-0.5.1-r42hc72bb7e_0.conda
   sha256: 72bb748dae10714a8a2f55b6022e7d224ce37c99909ff68e59850834163e98ca
   md5: e7036a0b18f2ee6b108fe12b908b18f3
