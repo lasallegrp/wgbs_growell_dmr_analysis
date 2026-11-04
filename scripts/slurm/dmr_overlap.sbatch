@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ============================================================================
-# run_overlap.sbatch
+# dmr_overlap.sbatch
 #
 # Run 03_dmrichr_overlap.R on the GROWELL outcome x timepoint layout:
 #   results/dmrichr_output/<outcome>/<timepoint>/DMRs/DMRs_annotated.xlsx
@@ -15,17 +15,19 @@
 #
 # Submit FROM THE PROJECT ROOT (the log paths below are relative to it):
 #   cd /quobyte/lasallegrp/projects/GROWELL/WGBS/<project>
-#   sbatch scripts/slurm/run_overlap.sbatch
+#   sbatch scripts/slurm/dmr_overlap.sbatch
 #
 # Optional overrides at submit time, e.g.:
-#   sbatch --export=ALL,OUTCOMES=egwg,ppwr,COMPARISONS=within_timepoint_across_outcomes scripts/slurm/run_overlap.sbatch
-#   sbatch --export=ALL,PERM_TEST=1 scripts/slurm/run_overlap.sbatch                       # 100 x resampleRegions
-#   sbatch --export=ALL,PERM_TEST=1,PERM_N=1000 scripts/slurm/run_overlap.sbatch           # final numbers
-#   sbatch --export=ALL,PERM_TEST=1,PERM_RANDOMIZE=randomize,PERM_GENOME=hg38 scripts/slurm/run_overlap.sbatch
-#   sbatch --export=ALL,REQUIRE_DIRECTION=1,EXCLUDE_SEX_CHR=1 scripts/slurm/run_overlap.sbatch
-#   sbatch --export=ALL,OVERLAP_MODE=coord,MAX_GAP=500 scripts/slurm/run_overlap.sbatch
-#   sbatch --export=ALL,UPSET_GENES=5 scripts/slurm/run_overlap.sbatch
+#   sbatch --export=ALL,OUTCOMES=egwg,ppwr,COMPARISONS=within_timepoint_across_outcomes scripts/slurm/dmr_overlap.sbatch
+#   sbatch --export=ALL,PERM_TEST=1 scripts/slurm/dmr_overlap.sbatch                       # 100 x resampleRegions
+#   sbatch --export=ALL,PERM_TEST=1,PERM_N=1000 scripts/slurm/dmr_overlap.sbatch           # final numbers
+#   sbatch --export=ALL,PERM_TEST=1,PERM_RANDOMIZE=randomize,PERM_GENOME=hg38 scripts/slurm/dmr_overlap.sbatch
+#   sbatch --export=ALL,REQUIRE_DIRECTION=1,EXCLUDE_SEX_CHR=1 scripts/slurm/dmr_overlap.sbatch
+#   sbatch --export=ALL,OVERLAP_MODE=coord,MAX_GAP=500 scripts/slurm/dmr_overlap.sbatch
+#   sbatch --export=ALL,UPSET_GENES=5 scripts/slurm/dmr_overlap.sbatch
 #   sbatch --export=ALL,OUTCOMES=egwg:ppwr,COMPARISONS=within_timepoint_across_outcomes,PERM_TEST=1        scripts/slurm/dmr_overlap.sbatch
+#   sbatch --export=ALL,OUTCOMES=egwg:ppwr,COMPARISONS=within_outcome_across_timepoints,PERM_TEST=1 scripts/slurm/dmr_overlap.sbatch
+#   sbatch --export=ALL,COMPARISONS=within_timepoint_across_outcomes,PERM_TEST=1        scripts/slurm/dmr_overlap.sbatch
 #   sbatch --export=ALL,COMPARISONS=within_outcome_across_timepoints,PERM_TEST=1 scripts/slurm/dmr_overlap.sbatch
 # Note: --export values are comma-separated, so for OUTCOMES/TIMEPOINTS with
 # several entries use ":" instead of "," (e.g. OUTCOMES=egwg:ppwr); it is

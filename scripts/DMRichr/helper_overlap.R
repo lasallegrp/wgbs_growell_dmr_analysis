@@ -437,10 +437,22 @@ plot_pairwise_heatmap <- function(pw, value, file, title, sets) {
 # ------------------------------------------------------------------------------------
 write_xlsx_safe <- function(lst, file) {
   lst <- lst[!vapply(lst, is.null, TRUE)]
-  nm <- substr(gsub("[\\[\\]\\*\\?/\\\\:]", "_", names(lst)), 1, 31)
-  nm <- make.unique(nm, sep = "_"); nm <- substr(nm, 1, 31)
+  full <- gsub("[\\[\\]\\*\\?/\\\\:]", "_", names(lst))
+  # Excel: <= 31 chars, unique case-insensitively. Truncate, then on a clash replace the
+  # tail with ~k (so the suffix is never cut off again).
+  nm <- character(0)
+  for (x in full) {
+    cand <- substr(x, 1, 31); k <- 1
+    while (tolower(cand) %in% tolower(nm)) {
+      suf <- paste0("~", k)
+      cand <- paste0(substr(x, 1, 31 - nchar(suf)), suf); k <- k + 1
+    }
+    nm <- c(nm, cand)
+  }
   names(lst) <- nm
   lst <- lapply(lst, function(x) if (nrow(x) == 0) data.frame(note = "no rows") else x)
+  # if any name was shortened, add a lookup sheet: sheet -> full name
+  if (any(nm != full)) lst <- c(lst, list(Sheet_index = data.frame(sheet = nm, full_name = full)))
   write.xlsx(lst, file, asTable = FALSE, overwrite = TRUE, firstRow = TRUE)
 }
 
@@ -617,10 +629,12 @@ perm_overlap_pair <- function(A, B, bg_A, bg_B, ntimes = 100, max_gap = 0, min_o
       nA <- table(as.character(seqnames(A))); nU <- table(as.character(seqnames(uA)))
       if (any(nU[names(nA)] < nA)) per_chr <- FALSE
     }
-    rargs <- list(randomize.function = regioneR::resampleRegions, universe = uA,
+    rargs <- list(randomize.function = regioneR::resampleRegions,
+                  randomize.function.name = "resampleRegions", universe = uA,
                   per.chromosome = per_chr)
   } else {
-    rargs <- list(randomize.function = regioneR::randomizeRegions, genome = genome,
+    rargs <- list(randomize.function = regioneR::randomizeRegions,
+                  randomize.function.name = "randomizeRegions", genome = genome,
                   mask = mask, per.chromosome = per_chr, allow.overlaps = TRUE)
   }
   set.seed(seed)
@@ -672,8 +686,8 @@ perm_pairwise <- function(dmr_list, bg_list, ntimes, max_gap, min_overlap_bp, ra
     perms[[length(perms) + 1]] <- data.frame(randomized_A = a, fixed_B = b, permuted = res$permuted)
     if (!is.null(pdf_dir)) {
       pdf(file.path(pdf_dir, paste0("perm_", a, "__vs__", b, ".pdf")), width = 7, height = 5)
-      plot(res$pt)
-      if (!is.null(res$lz)) plot(res$lz)
+      plot(res$pt, main = paste0(a, " vs ", b, " (", randomize, "Regions, n = ", ntimes, ")"))
+      if (!is.null(res$lz)) plot(res$lz, main = paste0("Local z-score: ", a, " vs ", b))
       dev.off()
     }
   }
