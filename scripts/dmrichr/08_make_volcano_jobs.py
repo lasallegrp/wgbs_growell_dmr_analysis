@@ -101,6 +101,8 @@ def main():
                          'auto = DMRichR rule (q if >= 100 regions pass q, else p)')
     ap.add_argument('--cutoff', type=float, default=0.05)
     ap.add_argument('--n_labels', type=int, default=20)
+    ap.add_argument('--fig_style', default='default', choices=['default', 'paper', 'poster'],
+                    help='figure sizing passed to 08_volcano_plot.R [default %(default)s]')
     ap.add_argument('--collect', action='store_true', help='also copy all PNGs into <out_dir>/png/')
     ap.add_argument('--force', action='store_true', help='redo timepoints that already have a volcano plot')
     ap.add_argument('--mem', default='16G')
@@ -179,7 +181,8 @@ Rscript {q(rs)} \\
   --prefix "$PREFIX" \\
   --sig_by {args.sig_by} \\
   --cutoff {args.cutoff} \\
-  --n_labels {args.n_labels}
+  --n_labels {args.n_labels} \\
+  --fig_style {args.fig_style}
 {collect}
 echo "Done: $OUTDIR/${{PREFIX}}_volcano_full.pdf"
 """

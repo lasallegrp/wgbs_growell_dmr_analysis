@@ -52,7 +52,9 @@ option_list <- list(
   make_option(c("--fig_height"), type = "double", default = 7,
               help = "Figure height in inches [default %default]"),
   make_option(c("--dpi"), type = "integer", default = 300,
-              help = "PNG resolution [default %default]")
+              help = "PNG resolution [default %default]"),
+  make_option(c("--fig_style"), type = "character", default = "default",
+              help = "default (as before; --fig_width/--fig_height apply) | paper (85 mm column) | poster [default %default]")
 )
 
 opt <- parse_args(OptionParser(option_list = option_list))
@@ -66,6 +68,19 @@ SIG_BY <- tolower(opt$sig_by)
 if (!SIG_BY %in% c("pvalue", "qvalue", "auto")) stop("--sig_by must be 'pvalue', 'qvalue' or 'auto', got: ", opt$sig_by)
 CUTOFF  <- opt$cutoff
 N_LABELS <- opt$n_labels
+
+# ==== FIGURE PRESETS (MODIFY numbers here; text in pt, sizes in inches) =======
+#   base_pt  -> theme_bw() base size (axis tick labels print at 0.8 x this)
+#   label_pt -> gene names on the points; point = dot size; legend_rows = rows in top legend
+fig_presets <- list(
+  default = list(base_pt = 13, title_pt = 15, label_pt = 3 * ggplot2::.pt, point = 1.3,
+                 legend_rows = 1, legend_title = "Direction", width = opt$fig_width, height = opt$fig_height),
+  paper   = list(base_pt = 9,  title_pt = 10, label_pt = 7,  point = 0.7,
+                 legend_rows = 3, legend_title = NULL, width = 85 / 25.4, height = 3.8),
+  poster  = list(base_pt = 22, title_pt = 26, label_pt = 16, point = 2.2,
+                 legend_rows = 2, legend_title = NULL, width = 10, height = 9))
+FIG_STYLE <- match.arg(tolower(opt$fig_style), names(fig_presets))
+fig <- fig_presets[[FIG_STYLE]]
 
 # ---- 1. Load data -----------------------------------------------------------
 
@@ -131,11 +146,11 @@ top_hits <- sig_regions %>%
 # ---- 4. Build the volcano plot ----------------------------------------------
 
 volcano <- ggplot(background, aes(x = difference, y = negLog10P, color = category)) +
-  geom_point(size = 1.3, alpha = 0.85, shape = 16) +   # shape 16 = solid dot, no border
+  geom_point(size = fig$point, alpha = 0.85, shape = 16) +   # shape 16 = solid dot, no border
   geom_hline(yintercept = -log10(P_LINE), linetype = "dashed", color = "black", linewidth = 0.4) +
   geom_vline(xintercept = 0, linetype = "dotted", color = "grey50", linewidth = 0.4) +
   scale_color_manual(
-    name = "Direction",
+    name = fig$legend_title,
     values = c("UP" = "#E63946", "DOWN" = "#1D3D8F", "NS" = "#CCCCCC"),
     labels = c(
       "UP"   = paste0("Hypermethylated (n=", dir_counts["UP"], ")"),
@@ -146,7 +161,7 @@ volcano <- ggplot(background, aes(x = difference, y = negLog10P, color = categor
   geom_text_repel(
     data = top_hits,
     aes(label = geneSymbol),
-    size = 3, fontface = "italic",
+    size = fig$label_pt / .pt, fontface = "italic",
     max.overlaps = Inf,
     show.legend = FALSE
   ) +
@@ -156,11 +171,12 @@ volcano <- ggplot(background, aes(x = difference, y = negLog10P, color = categor
     title = paste0("Differentially Methylated Regions (n = ", n_sig_regions, ")"),
     caption = CAPTION
   ) +
-  theme_bw(base_size = 13) +
+  guides(color = guide_legend(nrow = fig$legend_rows)) +
+  theme_bw(base_size = fig$base_pt) +
   theme(
     panel.grid.minor = element_blank(),
     legend.position = "top",              # Direction legend directly under the title
-    plot.title = element_text(face = "bold", hjust = 0.5, size = 15)
+    plot.title = element_text(face = "bold", hjust = 0.5, size = fig$title_pt)
   )
 
 # ---- 5. Save -----------------------------------------------------------------
@@ -168,8 +184,8 @@ volcano <- ggplot(background, aes(x = difference, y = negLog10P, color = categor
 pdf_path <- file.path(opt$outdir, paste0(opt$prefix, "_volcano_full.pdf"))
 png_path <- file.path(opt$outdir, paste0(opt$prefix, "_volcano_full.png"))
 
-ggsave(pdf_path, volcano, width = opt$fig_width, height = opt$fig_height)
-ggsave(png_path, volcano, width = opt$fig_width, height = opt$fig_height, dpi = opt$dpi)
+ggsave(pdf_path, volcano, width = fig$width, height = fig$height)
+ggsave(png_path, volcano, width = fig$width, height = fig$height, dpi = opt$dpi)
 
 message("Saved: ", pdf_path)
 message("Saved: ", png_path)
