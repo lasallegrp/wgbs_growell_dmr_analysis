@@ -86,6 +86,7 @@ def iter_comparisons(root, runs, keep):
 
 GENE_SETS = '/quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/reference/gene_sets_hg38.rds'
 
+GREAT_TABLE = '/quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/reference/GREATv4.genes.hg38.tsv.gz'
 
 def count_bed(f):
     with open(f) as fh:
@@ -103,7 +104,7 @@ def main():
     ap.add_argument('--gene_set_cache', default=GENE_SETS)
     ap.add_argument('--scripts_dir', default=str(SCRIPT_DIR), help="folder holding 07_enrichment_plot.R and helper.R [default: this script's folder]")
     ap.add_argument('--pixi_manifest', default=None, help=f'pixi.toml [default: first of {", ".join(PIXI_CANDIDATES)} in the repo]')
-    ap.add_argument('--great_gene_table', default='', help='local GREATv4.genes.hg38.tsv.gz, if rGREAT cannot download it')
+    ap.add_argument('--great_gene_table', default=GREAT_TABLE, help='local GREATv4.genes.hg38.tsv.gz, if rGREAT cannot download it')
     ap.add_argument('--enrich_args', default='', help='extra options for 07_enrichment_plot.R, quoted, e.g. "--mode presentation"')
     ap.add_argument('--force', action='store_true', help='redo timepoints whose --out_subdir is not empty')
     ap.add_argument('--mem', default='48G')

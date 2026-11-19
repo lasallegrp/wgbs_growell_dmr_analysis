@@ -127,6 +127,8 @@ option_list <- list(
   make_option("--min_bg_genes", type = "integer", default = 200L),
   # plots
   make_option("--mode", type = "character", default = "publication"),
+  make_option("--fig_style", type = "character", default = "default",
+              help = "default (sizes follow --mode, as before) | paper (170 mm, 7-8 pt) | poster [default %default]"),
   make_option("--top_n", type = "integer", default = NULL),
   make_option("--pval_cutoff", type = "double", default = 0.05),
   make_option("--use_adjusted", action = "store_true", default = FALSE),
@@ -154,6 +156,7 @@ tb <- function(x, nm) {
 }
 for (nm in c("use_background", "bed_zero_based", "do_clusterprofiler", "do_enrichr", "do_great")) opt[[nm]] <- tb(opt[[nm]], nm)
 opt$mode <- match.arg(opt$mode, c("publication", "presentation"))
+opt$fig_style <- match.arg(opt$fig_style, c("default", "paper", "poster"))
 opt$gene_assignment <- match.arg(opt$gene_assignment, c("auto", "great", "annotation"))
 opt$fig_format <- match.arg(tolower(opt$fig_format), c("pdf", "png"))
 if (is.null(opt$top_n)) opt$top_n <- if (opt$mode == "presentation") 3 else 7
@@ -501,11 +504,24 @@ great_plot <- lapply(names(great_res), function(cn) flat(great_res[[cn]], paste(
 names(great_plot) <- names(great_res)
 
 # ---- Plotting -------------------------------------------------------------------
-font_cfg <- if (opt$mode == "presentation") list(axis_text = 20, axis_title = 20, legend_text = 18, legend_title = 18) else
-  list(axis_text = 12, axis_title = 14, legend_text = 12, legend_title = 14)
+# ==== FIGURE PRESETS (MODIFY numbers here; text in pt, sizes in inches) =========
+#   wrap   = characters per line before a term name wraps
+#   row_in = height per plotted term; min_h / extra_h = minimum and padding height
+fig_presets <- list(
+  default = if (opt$mode == "presentation")
+              list(axis_text = 20, axis_title = 20, legend_text = 18, legend_title = 18,
+                   wrap = 50, width = 11, row_in = 0.50, min_h = 4, extra_h = 0)
+            else
+              list(axis_text = 12, axis_title = 14, legend_text = 12, legend_title = 14,
+                   wrap = 50, width = 9, row_in = 0.35, min_h = 3, extra_h = 1),
+  paper  = list(axis_text = 7, axis_title = 8, legend_text = 7, legend_title = 8,
+                wrap = 45, width = 170 / 25.4, row_in = 0.25, min_h = 1.8, extra_h = 0.9),
+  poster = list(axis_text = 20, axis_title = 22, legend_text = 18, legend_title = 20,
+                wrap = 35, width = 12, row_in = 0.60, min_h = 4, extra_h = 1.5))
+font_cfg <- fig_presets[[opt$fig_style]]
 xlab_p <- if (opt$use_adjusted) expression("-log"[10]("adj. p")) else expression("-log"[10](p))
 make_barplot <- function(df, title = NULL, subtitle = NULL, fonts = font_cfg) {
-  df <- df %>% dplyr::mutate(Term = stringr::str_wrap(Hmisc::capitalize(stringr::str_trim(Term)), 50),
+  df <- df %>% dplyr::mutate(Term = stringr::str_wrap(Hmisc::capitalize(stringr::str_trim(Term)), fonts$wrap),
                              Term = factor(Term, levels = unique(Term[order(forcats::fct_rev(Database), `-log10.p-value`)])))
   ggplot2::ggplot(df, ggplot2::aes(Term, `-log10.p-value`, fill = Database)) +
     ggplot2::geom_col(color = "black", width = 0.8) + ggplot2::coord_flip() +
@@ -515,7 +531,8 @@ make_barplot <- function(df, title = NULL, subtitle = NULL, fonts = font_cfg) {
                    axis.title.y = ggplot2::element_blank(), axis.title.x = ggplot2::element_text(size = fonts$axis_title),
                    legend.text = ggplot2::element_text(size = fonts$legend_text), legend.title = ggplot2::element_text(size = fonts$legend_title),
                    plot.title = ggplot2::element_text(size = fonts$axis_title + 2, face = "bold", hjust = 0.5),
-                   plot.subtitle = ggplot2::element_text(size = fonts$legend_text - 2, hjust = 0.5))
+                   # AFTER  (paper would otherwise give a 5 pt subtitle; floor at 6 pt; default unchanged)
+                   plot.subtitle = ggplot2::element_text(size = max(6, fonts$legend_text - 2), hjust = 0.5))
 }
 save_plot <- function(p, name, w, h) {
   path <- file.path(opt$outdir, paste0(opt$prefix, "_", gsub("[^A-Za-z0-9_]+", "_", name), ".", opt$fig_format))
@@ -529,10 +546,11 @@ plotted <- 0
 if (opt$mode == "presentation") {
   comb <- dplyr::bind_rows(cp_plot, enr_plot[grepl("GWAS", names(enr_plot))])
   if (!nrow(comb)) comb <- dplyr::bind_rows(enr_plot)
-  if (nrow(comb)) { save_plot(make_barplot(comb, subtitle = bg_note), "overview", 11, max(4, nrow(comb) * 0.5)); plotted <- 1 }
+  if (nrow(comb)) { save_plot(make_barplot(comb, subtitle = bg_note), "overview", font_cfg$width,
+                              max(font_cfg$min_h, nrow(comb) * font_cfg$row_in + font_cfg$extra_h)); plotted <- 1 }
 } else {
   plot_group <- function(df, name, title) if (!is.null(df) && nrow(df)) {
-    save_plot(make_barplot(df, title, bg_note), name, 9, max(3, nrow(df) * 0.35 + 1)); plotted <<- plotted + 1 }
+    save_plot(make_barplot(df, title, bg_note), name, font_cfg$width, max(font_cfg$min_h, nrow(df) * font_cfg$row_in + font_cfg$extra_h)); plotted <<- plotted + 1 }
   plot_group(cp_plot[grepl("^GO ", cp_plot$Database), ], "GO", "Gene Ontology (clusterProfiler)")
   for (cn in setdiff(unique(cp_plot$Database), grep("^GO ", unique(cp_plot$Database), value = TRUE)))
     plot_group(cp_plot[cp_plot$Database == cn, ], cn, paste0(cn, " (clusterProfiler)"))
