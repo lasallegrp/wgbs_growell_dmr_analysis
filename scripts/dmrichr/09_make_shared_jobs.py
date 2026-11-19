@@ -81,7 +81,7 @@ def find_pixi(arg):
 
 GENE_SETS = '/quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/reference/gene_sets_hg38.rds'
 SUB = {'gene': 'shared_gene_enrichment', 'coord': 'shared_loci_enrichment'}
-
+GREAT_TABLE = '/quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/reference/GREATv4.genes.hg38.tsv.gz'
 
 def nearest_manifest(x, top):
     for d in [x.parent, *x.parent.parents]:
@@ -107,14 +107,17 @@ def main():
     ap.add_argument('--min_items', '--min_genes', type=int, default=20,
                     help='lists with fewer genes/loci are not tested [default 20]')
     ap.add_argument('--gene_set_cache', default=GENE_SETS)
-    ap.add_argument('--great_gene_table', default='', help='local GREATv4.genes.hg38.tsv(.gz), needed for GREAT on compute nodes')
+    ap.add_argument('--great_gene_table', default=GREAT_TABLE, help='local GREATv4.genes.hg38.tsv(.gz), needed for GREAT on compute nodes')
     ap.add_argument('--scripts_dir', default=str(SCRIPT_DIR), help="folder holding the 07/09 R scripts and helper.R [default: this script's folder]")
     ap.add_argument('--pixi_manifest', default=None, help=f'pixi.toml [default: first of {", ".join(PIXI_CANDIDATES)} in the repo]')
     ap.add_argument('--enrich_args', default='', help='extra options for 07_enrichment_plot.R, quoted')
+    ap.add_argument('--out_tag', default='', help='suffix for output folders, e.g. poster -> shared_gene_enrichment_poster')
     ap.add_argument('--force', action='store_true', help='redo groups that already have results')
     ap.add_argument('--mem', default='32G')
     ap.add_argument('--time', default='12:00:00')
     args = ap.parse_args()
+
+    tag = f"_{args.out_tag}" if args.out_tag else ''
 
     od = absol(args.overlap_dir)
     if not od.is_dir():
@@ -138,13 +141,13 @@ def main():
     modes = ['gene', 'coord'] if args.mode == 'both' else [args.mode]
     for mode in modes:
         for x in sorted(od.rglob(f'*_overlap_{mode}.xlsx')):
-            if x.name.startswith('~$') or any(p.name in SUB.values() for p in x.parents):
+            if x.name.startswith('~$') or any(p.name.startswith(tuple(SUB.values())) for p in x.parents):
                 continue
             group = x.name[:-len(f'_overlap_{mode}.xlsx')]
             if keep and group not in keep:
                 continue
             man = fixed_man or nearest_manifest(x, od) or 'auto'
-            out = x.parent / SUB[mode]
+            out = x.parent / (SUB[mode] + tag)
             if (out / 'lists.tsv').exists() and not args.force:
                 done.append(f"{group} ({mode})")
                 continue
@@ -155,7 +158,7 @@ def main():
         sys.exit("Nothing to do." + (f" Already done (--force to redo): {', '.join(done)}" if done else
                                      f" No *_overlap_<gene|coord>.xlsx under {od} for --mode {args.mode}"))
 
-    jd = od / 'shared_enrichment'
+    jd = od / ('shared_enrichment' + tag)
     (jd / 'logs').mkdir(parents=True, exist_ok=True)
     tasks = jd / 'tasks.tsv'
     with open(tasks, 'w') as f:
