@@ -18,12 +18,12 @@
 #   sbatch scripts/slurm/run_overlap.sbatch
 #
 # Optional overrides at submit time, e.g.:
-# sbatch --export=ALL,COMPARISONS=within_outcome_across_timepoints,GENE_SET=data/metadata/dmrichr/MONDO_0011122_associations_export.tsv,SNP_SET=data/metadata/dmrichr/MONDO_0011122_associations_export.tsv,GWAS_LABEL=obesity scripts/slurm/dmr_overlap.sbatch
-# sbatch --export=ALL,COMPARISONS=within_timepoint_across_outcomes,GENE_SET=data/metadata/dmrichr/MONDO_0011122_associations_export.tsv,SNP_SET=data/metadata/dmrichr/MONDO_0011122_associations_export.tsv,GWAS_LABEL=obesity scripts/slurm/dmr_overlap.sbatch
-# sbatch --export=ALL,OUTCOMES=egwg:ppwr,COMPARISONS=within_timepoint_across_outcomes,GENE_SET=data/metadata/dmrichr/MONDO_0011122_associations_export.tsv,SNP_SET=data/metadata/dmrichr/MONDO_0011122_associations_export.tsv,GWAS_LABEL=obesity scripts/slurm/dmr_overlap.sbatch
-# sbatch --export=ALL,OUTCOMES=egwg:ppwr,COMPARISONS=within_outcome_across_timepoints,GENE_SET=data/metadata/dmrichr/MONDO_0011122_associations_export.tsv,SNP_SET=data/metadata/dmrichr/MONDO_0011122_associations_export.tsv,GWAS_LABEL=obesity scripts/slurm/dmr_overlap.sbatch
-#    sbatch --export=ALL,OUTCOMES=egwg,ppwr,COMPARISONS=within_timepoint_across_outcomes scripts/slurm/run_overlap.sbatch
-#   sbatch --export=ALL,PERM_TEST=1 scripts/slurm/run_overlap.sbatch                       # 100 x resampleRegions
+# sbatch --export=ALL,COMPARISONS=within_outcome_across_timepoints,GENE_SET=data/metadata/dmrichr/MONDO_0011122_associations_export.tsv,SNP_SET=data/metadata/dmrichr/MONDO_0011122_associations_export.tsv,GWAS_LABEL=obesity scripts/dmrichr/slurm/dmr_overlap.sbatch
+# sbatch --export=ALL,COMPARISONS=within_timepoint_across_outcomes,GENE_SET=data/metadata/dmrichr/MONDO_0011122_associations_export.tsv,SNP_SET=data/metadata/dmrichr/MONDO_0011122_associations_export.tsv,GWAS_LABEL=obesity scripts/dmrichr/slurm/dmr_overlap.sbatch
+# sbatch --export=ALL,OUTCOMES=egwg:ppwr,COMPARISONS=within_timepoint_across_outcomes,GENE_SET=data/metadata/dmrichr/MONDO_0011122_associations_export.tsv,SNP_SET=data/metadata/dmrichr/MONDO_0011122_associations_export.tsv,GWAS_LABEL=obesity scripts/dmrichr/slurm/dmr_overlap.sbatch
+# sbatch --export=ALL,OUTCOMES=egwg:ppwr,COMPARISONS=within_outcome_across_timepoints,GENE_SET=data/metadata/dmrichr/MONDO_0011122_associations_export.tsv,SNP_SET=data/metadata/dmrichr/MONDO_0011122_associations_export.tsv,GWAS_LABEL=obesity scripts/dmrichr/slurm/dmr_overlap.sbatch
+#    sbatch --export=ALL,OUTCOMES=egwg,ppwr,COMPARISONS=within_timepoint_across_outcomes scripts/dmrichr/slurm/run_overlap.sbatch
+#   sbatch --export=ALL,PERM_TEST=1 scripts/dmrichr/slurm/run_overlap.sbatch                       # 100 x resampleRegions
 #   sbatch --export=ALL,PERM_TEST=1,PERM_N=1000 scripts/slurm/run_overlap.sbatch           # final numbers
 #   sbatch --export=ALL,PERM_TEST=1,PERM_RANDOMIZE=randomize,PERM_GENOME=hg38 scripts/slurm/run_overlap.sbatch
 #   sbatch --export=ALL,REQUIRE_DIRECTION=1,EXCLUDE_SEX_CHR=1 scripts/slurm/run_overlap.sbatch
@@ -282,3 +282,8 @@ echo "Sets used: ${OUTDIR}/sets_used.tsv"
 [[ "${PERM_TEST}" == "1" ]] && echo "regioneR summary: ${OUTDIR}/regioneR_permutation_summary.pdf"
 echo "End time: $(date)"
 echo "Elapsed time: ${ELAPSED_SECONDS} seconds"
+
+python3 scripts/dmrichr/09_make_shared_jobs.py \
+  --overlap_dir results/dmrichr_output/DMRichR_overlap/egwg_ppwr_gwas-obesity \
+  --groups ppwr --mode gene --min_items 10
+sbatch results/dmrichr_output/DMRichR_overlap/egwg_ppwr_gwas-obesity/shared_enrichment/run_shared_enrichment.sbatch

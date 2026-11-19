@@ -39,6 +39,8 @@
 #     --consensus_regions_tsv .../09_consensus_modules/cov3_75pct/covMin4_methSD0p08/v1_all_pcs/shared/Consensus_Region_Assignments.tsv \
 #     --annotatr_cache /path/reference/annotatr_hg38.rds \
 #     --plot_modules yellow,brown
+#     (or --plot_module_sets PPWR_all3_timepoints.txt,PPWR_modules.txt to get
+#      one set of selected plots per module-list file)
 #
 # Path derivation: cpg_label / region_label / adjustment_version are read
 # from the TSV path. Both layouts work:
@@ -125,6 +127,8 @@ option_list <- list(
               help = "TRUE to add width-adjusted ORs from logistic regression (overlap ~ in_module + log(width)) as a sensitivity analysis [default %default]."),
   make_option("--plot_modules", type = "character", default = NULL,
               help = "Comma-separated modules of interest, e.g. 'yellow,brown,red,lightsteelblue1'. Produces *_selected distribution plots and forest plots."),
+  make_option("--plot_module_sets", type = "character", default = NULL,
+              help = "Comma-separated module-list files (one module per line, '#' comments OK). Each file gives its own set of distribution + forest plots, named by the file name, e.g. PPWR_all3_timepoints.txt -> *_PPWR_all3_timepoints. Use name=file to set the name yourself. Can be combined with --plot_modules."),
   make_option("--color_overrides", type = "character", default = NULL,
               help = "Module bar colour overrides, e.g. 'yellow=darkgoldenrod3,white=grey80'."),
   make_option("--log2OR_cap", type = "double", default = 3,
@@ -186,6 +190,27 @@ if (!is.finite(opt$log2OR_cap) || opt$log2OR_cap <= 0) stop("--log2OR_cap must b
 if (!is.finite(opt$fdr_cut) || opt$fdr_cut <= 0 || opt$fdr_cut >= 1) stop("--fdr_cut must be in (0, 1).", call. = FALSE)
 
 plot_modules <- if (!is.null(opt$plot_modules)) trimws(strsplit(opt$plot_modules, ",")[[1]]) else NULL
+
+# Named module sets for the selected-module plots: list(set_name = modules)
+plot_sets <- list()
+if (!is.null(plot_modules)) plot_sets[["selected"]] <- plot_modules
+if (!is.null(opt$plot_module_sets) && nzchar(opt$plot_module_sets)) {
+  for (entry in trimws(strsplit(opt$plot_module_sets, ",")[[1]])) {
+    if (grepl("=", entry, fixed = TRUE)) {
+      set_name <- trimws(sub("=.*$", "", entry)); f <- trimws(sub("^[^=]*=", "", entry))
+    } else {
+      f <- entry; set_name <- tools::file_path_sans_ext(basename(f))
+    }
+    if (!file.exists(f)) stop("--plot_module_sets file not found: ", f, call. = FALSE)
+    mods <- trimws(sub("#.*$", "", readLines(f, warn = FALSE)))
+    mods <- unique(unlist(strsplit(mods[nzchar(mods)], "[,\t ]+")))
+    mods <- sub("^ME", "", mods[nzchar(mods)])
+    if (!length(mods)) stop("--plot_module_sets file has no modules: ", f, call. = FALSE)
+    set_name <- gsub("[^A-Za-z0-9_.-]+", "_", set_name)
+    plot_sets[[set_name]] <- mods
+    message("Plot set '", set_name, "': ", length(mods), " module(s): ", paste(mods, collapse = ", "))
+  }
+}
 color_overrides <- annot_parse_color_overrides(opt$color_overrides)
 
 if (!opt$build_cache_only) {
@@ -364,6 +389,18 @@ run_annotation_consensus <- function(regions, di, variant_label, source_file) {
 
   # --- plots ---
   fam_name <- c(genic = "Genic", cpg = "CpG")
+  # Keep only modules present in this network; report any that are not
+  present_mods <- unique(as.character(annotated$module))
+  set_modules <- lapply(setNames(names(plot_sets), names(plot_sets)), function(nm) {
+    mods <- plot_sets[[nm]]
+    if (length(present_mods)) {
+      miss <- setdiff(mods, present_mods)
+      if (length(miss)) L("Plot set '", nm, "': not in this network, skipped: ", paste(miss, collapse = ", "))
+      mods <- intersect(mods, present_mods)
+    }
+    L("Plot set '", nm, "': ", length(mods), " module(s)")
+    mods
+  })
   for (fam in c("genic", "cpg")) {
     plotAnnotatrEnrichmentHeatmap(enr[[fam]], p_cut = opt$fdr_cut, log2OR_cap = opt$log2OR_cap,
                                   title = paste0(fam_name[[fam]], " enrichment by module (", variant_label, ")"),
@@ -376,16 +413,20 @@ run_annotation_consensus <- function(regions, di, variant_label, source_file) {
     for (mode in c("stacked", "overlap")) {
       plotAnnotationDistribution(dist, family = fam, mode = mode, color_overrides = color_overrides,
                                  file_stem = file.path(plot_dir, paste0(fam_name[[fam]], "_Distribution_", mode, "_all")))
-      if (!is.null(plot_modules)) {
-        plotAnnotationDistribution(dist, family = fam, mode = mode, groups = plot_modules,
+      for (set_name in names(plot_sets)) {
+        mods <- set_modules[[set_name]]
+        if (!length(mods)) next
+        plotAnnotationDistribution(dist, family = fam, mode = mode, groups = mods,
                                    color_overrides = color_overrides,
-                                   file_stem = file.path(plot_dir, paste0(fam_name[[fam]], "_Distribution_", mode, "_selected")))
+                                   file_stem = file.path(plot_dir, paste0(fam_name[[fam]], "_Distribution_", mode, "_", set_name)))
       }
     }
-    if (!is.null(plot_modules)) {
-      plotAnnotatrEnrichmentForest(enr[[fam]], groups = plot_modules, p_cut = opt$fdr_cut,
+    for (set_name in names(plot_sets)) {
+      mods <- set_modules[[set_name]]
+      if (!length(mods)) next
+      plotAnnotatrEnrichmentForest(enr[[fam]], groups = mods, p_cut = opt$fdr_cut,
                                    color_overrides = color_overrides,
-                                   file_stem = file.path(plot_dir, paste0(fam_name[[fam]], "_Enrichment_Forest_selected")))
+                                   file_stem = file.path(plot_dir, paste0(fam_name[[fam]], "_Enrichment_Forest_", set_name)))
     }
   }
   L("Wrote plots to: ", plot_dir)

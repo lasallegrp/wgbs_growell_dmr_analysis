@@ -35,6 +35,7 @@
 #       moduleAnnotatrEnrichment(), summarizeAnnotationDistribution(),
 #       plotAnnotationDistribution(), plotAnnotatrEnrichmentHeatmap(),
 #       plotAnnotatrEnrichmentForest() [+ annot_* plot utilities]
+#   - MODULE GENE LABELS (figures: 12c, 12d): module_gene_labels()
 #   - GENE-SET CACHE + FAST GREAT TEST (12b):
 #       parse_collections(), build_gene_set_cache(), load_gene_set_cache(),
 #       symbols_to_entrez(), great_fast_prepare(), great_fast_test()
@@ -2992,9 +2993,13 @@ plotAnnotatrEnrichmentForest <- function(enrich_df,
 # region plus distance to TSS. The functions below reproduce that with
 # rGREAT's LOCAL implementation, so it runs on compute nodes:
 #
-#   tss_source = "GREAT:hg38" (default) -> GREAT v4's own gene/TSS table,
-#       shipped inside rGREAT (extdata/GREATv4.genes.hg38.tsv.gz; the
-#       same ~18.8k mostly protein-coding genes the web server uses).
+#   tss_source = "GREAT:hg38" (default) -> GREAT v4's own gene/TSS table
+#       (the same ~18.8k mostly protein-coding genes the web server uses).
+#       Read from $GREAT_GENE_TABLE if set, else from the copy bundled in
+#       newer rGREAT (extdata/GREATv4.genes.hg38.tsv.gz). rGREAT 2.0.0
+#       (Bioconductor 3.16) does not bundle it: download once from
+#       https://jokergoo.github.io/rGREAT_suppl/data/GREATv4.genes.hg38.tsv
+#       and export GREAT_GENE_TABLE=/path/to/that/file.
 #       Built exactly as rGREAT::getGREATDefaultTSS() does, except that
 #       chromosome lengths come from rGREAT's shipped CHR_LEN_DB instead
 #       of a live UCSC download.
@@ -3074,7 +3079,8 @@ gene_info_from_orgdb <- function(entrez, genome = "hg38") {
 great_build_extended_tss <- function(tss_source = "GREAT:hg38", genome = "hg38",
                                      mode = c("basalPlusExt", "twoClosest", "oneClosest"),
                                      basal_upstream = 5000, basal_downstream = 1000,
-                                     extension = 1e6, verbose = TRUE) {
+                                     extension = 1e6, verbose = TRUE,
+                                     great_gene_table = Sys.getenv("GREAT_GENE_TABLE", "")) {
   mode <- match.arg(mode)
   if (!requireNamespace("rGREAT", quietly = TRUE)) stop("rGREAT is not installed.", call. = FALSE)
   src <- great_parse_tss_source(tss_source, genome)
@@ -3083,8 +3089,24 @@ great_build_extended_tss <- function(tss_source = "GREAT:hg38", genome = "hg38",
   chrlen <- chr_len_db[[src$genome]]
 
   if (src$category == "GREAT") {
-    f <- system.file("extdata", paste0("GREATv4.genes.", src$genome, ".tsv.gz"), package = "rGREAT")
-    if (!nzchar(f)) stop("GREAT v4 gene table for ", src$genome, " not found in rGREAT.", call. = FALSE)
+    # GREAT v4 gene table: a local copy (GREAT_GENE_TABLE env var or the
+    # great_gene_table argument) wins; otherwise the copy bundled in newer
+    # rGREAT releases. rGREAT 2.0.0 (Bioconductor 3.16) does NOT bundle it --
+    # it downloads it at run time, which fails on compute nodes.
+    if (nzchar(great_gene_table)) {
+      validate_file_exists(great_gene_table, "GREAT gene table (GREAT_GENE_TABLE)")
+      f <- great_gene_table
+    } else {
+      f <- system.file("extdata", paste0("GREATv4.genes.", src$genome, ".tsv.gz"), package = "rGREAT")
+    }
+    if (!nzchar(f)) {
+      stop("GREAT v4 gene table for ", src$genome, " is not bundled with rGREAT ",
+           as.character(utils::packageVersion("rGREAT")), ". Download it once on a node with internet, e.g.\n",
+           "  wget https://jokergoo.github.io/rGREAT_suppl/data/GREATv4.genes.", src$genome, ".tsv\n",
+           "and set  export GREAT_GENE_TABLE=/path/to/GREATv4.genes.", src$genome, ".tsv  before running ",
+           "(or use --tss_source TxDb:", src$genome, ").", call. = FALSE)
+    }
+    great_table_used <- f
     tb <- utils::read.table(gzfile(f), stringsAsFactors = FALSE, quote = "", comment.char = "#")
     tb[is.na(tb[, 1]), 1] <- ""
     entrez <- .great_map_table_to_entrez(tb, src$genome)
@@ -3119,6 +3141,8 @@ great_build_extended_tss <- function(tss_source = "GREAT:hg38", genome = "hg38",
                                     basal_upstream = basal_upstream, basal_downstream = basal_downstream,
                                     extension = extension,
                                     rGREAT_version = as.character(utils::packageVersion("rGREAT")),
+                                    gene_table = if (exists("great_table_used", inherits = FALSE))
+                                      paste0(great_table_used, " (md5 ", unname(tools::md5sum(great_table_used)), ")") else NA_character_,
                                     n_genes = length(unique(ext$gene_id)))
   ext
 }
@@ -3483,5 +3507,153 @@ great_fast_test <- function(prep, regions_by_module, verbose = TRUE) {
     attr(df, "n_total") <- n_total[j]
     out[[mods[j]]] <- df
   }
+  out
+}
+
+# ================================================================
+# find_kme_files
+#   Locates script 11's consensus module-membership tables:
+#   <kme_dir>/<dataset>/<cpg_label>/<region_label>/<adjustment_version>/
+#       <dataset>_Consensus_Region_Module_Membership.txt
+#   kme_dir defaults to <project_root>/comethyl_output/consensus/11_consensus_membership.
+#   Returns a named character vector (dataset -> path) of files that exist;
+#   missing ones are reported, not fatal.
+# ================================================================
+find_kme_files <- function(project_root, cpg_label, region_label, adjustment_version, datasets,
+                           kme_dir = NULL, verbose = TRUE) {
+  if (is.null(kme_dir)) kme_dir <- file.path(project_root, "comethyl_output", "consensus", "11_consensus_membership")
+  f <- vapply(datasets, function(ds) file.path(kme_dir, ds, cpg_label, region_label, adjustment_version,
+                                               paste0(ds, "_Consensus_Region_Module_Membership.txt")), "")
+  ok <- file.exists(f)
+  if (verbose) for (i in seq_along(f)) message("[find_kme_files] ", datasets[i], ": ", if (ok[i]) f[i] else paste0("NOT FOUND (", f[i], ")"))
+  stats::setNames(f[ok], datasets[ok])
+}
+
+# ================================================================
+# MODULE GENE LABELS (figure axes, e.g. "MCU, MICU1")
+# ================================================================
+# ------------------------------------------------------------
+# module_gene_labels
+#   One short gene label per module for figure axes.
+#   Sources, first match wins per module:
+#     module_gene_file : TSV/CSV with columns module + genes (or label);
+#                        manual labels, e.g. "lightcyan1  MCU, MICU1"
+#     gene_assoc_file  : Region_Gene_Associations.tsv from 12a/15 (one row
+#                        per region-gene pair), or an Annotated_Regions.tsv
+#                        whose gene_symbol column holds "A | B"
+#   Ranking of genes within a module:
+#     kme_file given  -> hub genes: genes ranked by the highest kME of
+#                        their regions in that module (script 11 module
+#                        membership table: rows = RegionID, columns
+#                        kME<module>)
+#     otherwise       -> genes ranked by the number of module regions
+#                        assigned to them, then closest distance to TSS
+#   Modules with no assigned gene get intergenic_label.
+#   Returns data.frame(module, genes, source).
+# ------------------------------------------------------------
+module_gene_labels <- function(modules, gene_assoc_file = NULL, module_gene_file = NULL,
+                               kme_file = NULL, top_n = 2, intergenic_label = "intergenic",
+                               verbose = TRUE) {
+  modules <- unique(as.character(modules))
+  read_tab <- function(f) {
+    if (tolower(tools::file_ext(f)) == "csv") {
+      utils::read.csv(f, stringsAsFactors = FALSE, check.names = FALSE)
+    } else {
+      utils::read.delim(f, stringsAsFactors = FALSE, check.names = FALSE, quote = "")
+    }
+  }
+  out <- data.frame(module = modules, genes = NA_character_, source = NA_character_,
+                    stringsAsFactors = FALSE)
+
+  if (!is.null(gene_assoc_file)) {
+    validate_file_exists(gene_assoc_file, "gene_assoc_file")
+    a <- read_tab(gene_assoc_file)
+    miss <- setdiff(c("module", "gene_symbol"), colnames(a))
+    if (length(miss) > 0) stop("gene_assoc_file is missing column(s): ", paste(miss, collapse = ", "), call. = FALSE)
+    if (!"RegionID" %in% colnames(a)) a$RegionID <- seq_len(nrow(a))
+    if (!"distance_to_TSS" %in% colnames(a)) a$distance_to_TSS <- NA
+    a$module <- as.character(a$module); a$gene_symbol <- as.character(a$gene_symbol)
+    # Annotated_Regions style "A | B" -> one row per gene
+    if (any(grepl("|", a$gene_symbol, fixed = TRUE), na.rm = TRUE)) {
+      g <- strsplit(ifelse(is.na(a$gene_symbol), "", a$gene_symbol), " | ", fixed = TRUE)
+      d <- strsplit(ifelse(is.na(a$distance_to_TSS), "", as.character(a$distance_to_TSS)), " | ", fixed = TRUE)
+      d <- mapply(function(dd, gg) if (length(dd) == length(gg)) dd else rep(NA, length(gg)), d, g, SIMPLIFY = FALSE)
+      a <- data.frame(RegionID = rep(a$RegionID, lengths(g)), module = rep(a$module, lengths(g)),
+                      gene_symbol = unlist(g), distance_to_TSS = unlist(d), stringsAsFactors = FALSE)
+    }
+    a <- a[a$module %in% modules & !is.na(a$gene_symbol) & nzchar(a$gene_symbol) & a$gene_symbol != "NA", , drop = FALSE]
+    a$dist <- suppressWarnings(abs(as.numeric(a$distance_to_TSS)))
+
+    a$kme <- NA_real_
+    if (!is.null(kme_file)) {
+      # one file, or a comma list (e.g. Baseline,36-38wk,Postpartum) -> mean kME per region
+      kfiles <- trimws(strsplit(kme_file, ",")[[1]])
+      kms <- lapply(kfiles, function(f) {
+        validate_file_exists(f, "kme_file")
+        km <- utils::read.delim(f, check.names = FALSE, stringsAsFactors = FALSE)
+        idc <- intersect(c("RegionID", "regionID", "region", "Region", "X", ""), colnames(km))[1]
+        mcol <- intersect(c("module", "moduleColor", "Module"), colnames(km))[1]
+        vcol <- intersect(c("kME", "kme", "MM", "membership", "module_membership"), colnames(km))[1]
+        if (!is.na(idc) && !is.na(mcol) && !is.na(vcol) && !any(grepl("^(kME|MM)", setdiff(colnames(km), vcol)))) {
+          # long format: one row per region (its own module) -> wide kME<module>
+          w <- stats::reshape(data.frame(RegionID = as.character(km[[idc]]), m = paste0("kME", km[[mcol]]),
+                                         v = suppressWarnings(as.numeric(km[[vcol]]))),
+                              idvar = "RegionID", timevar = "m", direction = "wide")
+          rownames(w) <- w$RegionID; w$RegionID <- NULL; colnames(w) <- sub("^v[.]", "", colnames(w))
+          return(w)
+        }
+        if (!is.na(idc)) { rownames(km) <- as.character(km[[idc]]); km[[idc]] <- NULL }
+        km
+      })
+      n_found <- 0L
+      for (m in unique(a$module)) {
+        idx <- a$module == m
+        vals <- lapply(kms, function(km) {
+          col <- intersect(c(paste0("kME", m), paste0("MM", m), paste0("kME_", m), paste0("MM_", m), paste0("kME.", m), m), colnames(km))[1]
+          if (is.na(col)) return(rep(NA_real_, sum(idx)))
+          suppressWarnings(as.numeric(km[as.character(a$RegionID[idx]), col]))
+        })
+        v <- rowMeans(do.call(cbind, vals), na.rm = TRUE); v[is.nan(v)] <- NA
+        a$kme[idx] <- v
+        if (any(!is.na(v))) n_found <- n_found + 1L else if (verbose)
+          message("[module_gene_labels] no kME values for ", m, " (column or RegionIDs not matched); using region counts")
+      }
+      if (n_found == 0L) warning("kme_file given but no module matched: check that its row names / RegionID ",
+                                 "column match the RegionIDs in gene_assoc_file and its columns are kME<module>.", call. = FALSE)
+      if (verbose) message("[module_gene_labels] kME from ", length(kfiles), " file(s); matched ", n_found, " of ",
+                           length(unique(a$module)), " modules")
+    }
+
+    for (m in unique(a$module)) {
+      d <- a[a$module == m, , drop = FALSE]
+      s <- do.call(rbind, lapply(split(d, d$gene_symbol), function(x) data.frame(
+        gene = x$gene_symbol[1], n_regions = length(unique(x$RegionID)),
+        max_kme = suppressWarnings(max(x$kme, na.rm = TRUE)),
+        min_dist = suppressWarnings(min(x$dist, na.rm = TRUE)), stringsAsFactors = FALSE)))
+      s$max_kme[!is.finite(s$max_kme)] <- NA; s$min_dist[!is.finite(s$min_dist)] <- Inf
+      use_kme <- any(!is.na(s$max_kme))
+      s <- if (use_kme) s[order(-ifelse(is.na(s$max_kme), -Inf, s$max_kme), -s$n_regions, s$gene), ]
+           else s[order(-s$n_regions, s$min_dist, s$gene), ]
+      out$genes[out$module == m] <- paste(utils::head(s$gene, top_n), collapse = ", ")
+      out$source[out$module == m] <- if (use_kme) "hub genes (max kME)" else "most regions"
+    }
+  }
+
+  if (!is.null(module_gene_file)) {
+    validate_file_exists(module_gene_file, "module_gene_file")
+    mf <- read_tab(module_gene_file)
+    gcol <- intersect(c("genes", "label", "gene_label", "gene_symbol"), colnames(mf))[1]
+    if (!"module" %in% colnames(mf) || is.na(gcol)) {
+      stop("module_gene_file needs columns 'module' and 'genes' (or 'label').", call. = FALSE)
+    }
+    mf <- mf[!is.na(mf[[gcol]]) & nzchar(trimws(mf[[gcol]])), , drop = FALSE]
+    hit <- match(out$module, as.character(mf$module))
+    out$genes[!is.na(hit)] <- trimws(mf[[gcol]][hit[!is.na(hit)]])
+    out$source[!is.na(hit)] <- "module_gene_file"
+  }
+
+  none <- is.na(out$genes) | !nzchar(out$genes)
+  out$genes[none] <- intergenic_label
+  out$source[none] <- ifelse(is.null(gene_assoc_file) && is.null(module_gene_file), "none supplied", "no gene assigned")
   out
 }

@@ -818,6 +818,19 @@ readthrough_components <- function(sym) {
   setNames(parts[ok], sym[ok])
 }
 
+# Per-gene evidence count used for GWAS labels and ranking. by = associations | studies
+# (GWAS Catalog accessions; one paper often has several) | publications (PubMed IDs) | snps |
+# traits. Falls back to n_associations when the column is missing or NA (gene-list input).
+gwas_count_col <- function(by) {
+  by <- match.arg(by, c("publications", "studies", "snps", "traits", "associations"))
+  paste0("n_", by)
+}
+gwas_count <- function(genes, by) {
+  cc <- gwas_count_col(by)
+  v <- if (cc %in% names(genes)) genes[[cc]] else rep(NA, nrow(genes))
+  ifelse(is.na(v), genes$n_associations, v)
+}
+
 build_gwas_gene_set <- function(df, harmonize = TRUE, expand_readthrough = TRUE) {
   if (identical(attr(df, "type"), "gwas_catalog")) {
     mg <- ifelse(is.na(df$mappedGenes), "", as.character(df$mappedGenes))
@@ -857,6 +870,7 @@ build_gwas_gene_set <- function(df, harmonize = TRUE, expand_readthrough = TRUE)
                  n_studies = length(unique(x$study)),
                  n_publications = length(unique(x$pubmed)),
                  n_traits = length(unique(x$trait)),
+                 n_snps = length(unique(sub("-[^-]*$", "", x$snp))),
                  min_p = ifelse(is.finite(p), p, NA),
                  n_gw_significant = length(unique(x$assoc_id[!is.na(x$pValue) & x$pValue < 5e-8])),
                  only_intergenic = all(x$intergenic),
@@ -881,7 +895,7 @@ build_gwas_gene_set <- function(df, harmonize = TRUE, expand_readthrough = TRUE)
     na <- if (is.na(nac)) rep(1L, length(g0)) else as.integer(df[[nac]][keep])
     na[is.na(na)] <- 1L
     genes <- aggregate(list(n_associations = na), list(geneSymbol = apply_symbol_map(g0, map)), max)
-    genes$n_studies <- NA; genes$n_traits <- NA; genes$min_p <- NA; genes$n_gw_significant <- NA
+    genes$n_studies <- NA; genes$n_publications <- NA; genes$n_snps <- NA; genes$n_traits <- NA; genes$min_p <- NA; genes$n_gw_significant <- NA
     genes$traits <- NA
     long <- NULL; tr <- NULL
   }
@@ -922,7 +936,7 @@ gwas_snp_gr <- function(df) {
 #   G = GWAS genes in U. One-sided Fisher (all associations, and p < 5e-8 only), plus an
 #   association-weighted check: among testable GWAS genes, do DMR genes carry more GWAS
 #   associations than the rest (one-sided Wilcoxon)?
-gene_set_enrichment_one <- function(D, U, gs) {
+gene_set_enrichment_one <- function(D, U, gs, count_col = "n_associations") {
   U <- unique(U); D <- intersect(unique(D), U)
   G <- intersect(gs$geneSymbol, U)
   Ggw <- intersect(gs$geneSymbol[which(gs$n_gw_significant > 0)], U)
@@ -934,7 +948,7 @@ gene_set_enrichment_one <- function(D, U, gs) {
       OR = unname(ft$estimate), p = ft$p.value)
   }
   a <- f(G); b <- f(Ggw)
-  na <- gs$n_associations[match(G, gs$geneSymbol)]; inD <- G %in% D
+  na <- gs[[count_col]][match(G, gs$geneSymbol)]; inD <- G %in% D
   w <- if (sum(inD) >= 1 && sum(!inD) >= 1)
     suppressWarnings(wilcox.test(na[inD], na[!inD], alternative = "greater")$p.value) else NA
   ov <- G[inD][order(-na[inD])]
@@ -945,8 +959,9 @@ gene_set_enrichment_one <- function(D, U, gs) {
              gw_gwas_genes_in_universe = b[["n"]], gw_overlap = b[["ov"]], gw_expected = b[["exp"]],
              gw_fold = ifelse(isTRUE(b[["exp"]] > 0), b[["ov"]] / b[["exp"]], NA),
              gw_fisher_OR = b[["OR"]], gw_fisher_p = b[["p"]],
-             mean_assoc_dmr_genes = if (any(inD)) mean(na[inD]) else NA,
-             mean_assoc_other_gwas_genes = if (any(!inD)) mean(na[!inD]) else NA,
+             count_by = count_col,
+             mean_count_dmr_genes = if (any(inD)) mean(na[inD]) else NA,
+             mean_count_other_gwas_genes = if (any(!inD)) mean(na[!inD]) else NA,
              assoc_wilcox_p = w,
              overlap_genes = if (length(ov)) paste0(ov, " (", na[match(ov, G)], ")", collapse = "; ") else "",
              stringsAsFactors = FALSE)
@@ -970,30 +985,33 @@ gene_dir_table <- function(d, H) {
 # (coloured = gene is a DMR gene in that set, red hyper / blue hypo; grey = not), rows joined by
 # a line and shaded alternately across both panels; vertical lines separate set_groups.
 plot_gwas_evidence <- function(ev, info, sets, file, title, max_genes = 60, label = "GWAS",
-                               set_groups = NULL) {
+                               set_groups = NULL, count_col = "n_associations",
+                               count_label = "associations") {
   if (is.null(ev) || !nrow(ev)) return(invisible(NULL))
   info <- info[info$geneSymbol %in% ev$geneSymbol, ]
   nset <- table(ev$geneSymbol)
   info$n_sets <- as.integer(nset[info$geneSymbol])
-  info <- info[order(-info$n_associations, -info$n_sets, info$geneSymbol), ]
+  info$n_count <- info[[count_col]]
+  info <- info[order(-info$n_count, info$min_p, -info$n_sets, info$geneSymbol), ]
   dropped <- max(0, nrow(info) - max_genes)
   info <- head(info, max_genes); ev <- ev[ev$geneSymbol %in% info$geneSymbol, ]
   lv <- rev(info$geneSymbol); ng <- length(lv)
   info$nlp <- -log10(pmax(info$min_p, 1e-300))
-  info$lab <- ifelse(is.na(info$n_studies), "", paste0(info$n_studies, " st / ", info$n_traits, " tr"))
+  info$lab <- ifelse(is.na(info$n_publications), "",
+                     paste0(info$n_publications, " pub / ", info$n_snps, " snp / ", info$n_traits, " tr"))
   stripes <- data.frame(pos = seq(1, ng, by = 2))
   stripe_layer <- geom_rect(data = stripes, aes(xmin = -Inf, xmax = Inf, ymin = pos - .5, ymax = pos + .5),
                             inherit.aes = FALSE, fill = "grey93", colour = NA)
-  p1 <- ggplot(info, aes(n_associations, geneSymbol)) + stripe_layer +
+  p1 <- ggplot(info, aes(n_count, geneSymbol)) + stripe_layer +
     geom_col(aes(fill = nlp), width = .7) +
     geom_text(aes(label = lab), hjust = -0.1, size = 2.5, colour = "grey25") +
     scale_y_discrete(limits = lv) +
     scale_x_continuous(expand = expansion(mult = c(0, .35))) +
     scale_fill_gradient(low = "#C6DBEF", high = "#08306B", na.value = "grey70", name = "-log10(best p)") +
-    labs(x = paste0(label, " associations (n)"), y = NULL, title = title,
+    labs(x = paste0(label, " ", count_label, " (n)"), y = NULL, title = title,
          subtitle = paste0("DMR genes (>= 1 set) that are ", label, " genes",
                            if (dropped) paste0("; top ", max_genes, " shown (", dropped, " more in table)") else ""),
-         caption = "st = studies, tr = traits") +
+         caption = "pub = publications (PubMed), snp = distinct SNPs, tr = traits") +
     theme_bw(10) + theme(axis.text.y = element_text(face = "italic"), legend.position = "bottom",
                          panel.grid.major.y = element_blank(), panel.grid.minor = element_blank(),
                          plot.caption = element_text(hjust = 0, colour = "grey30"))

@@ -76,10 +76,12 @@ docs/
 #if you have some approved exceptions, list them here
 #################################
 *.pdf
-!manuscript_pdfs/*.pdfresults/comethyl/
+!manuscript_pdfs/*.pdf
+results/comethyl/
 results/logs/
 data/processed/comethyl/
 data/metadata/comethyl/
 analysis/logs/comethyl/
 reproducibility/comethyl/pixi/.pixi/
+reference/
 Rplots.pdf

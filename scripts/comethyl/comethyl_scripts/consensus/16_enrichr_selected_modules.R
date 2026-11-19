@@ -117,6 +117,12 @@ option_list <- list(
               help = "GREAT: terms need >= this many module region hits to be FDR-tested and flagged (rGREAT getEnrichmentTable() default) [default %default]."),
   make_option("--min_gene_hits", type = "double", default = 2, help = "GREAT: minimum term genes hit to flag a term [default %default]."),
   make_option("--fdr_cut", type = "double", default = 0.05, help = "FDR threshold for significance flags [default %default]."),
+  make_option("--pool_modules", type = "character", default = "FALSE",
+              help = "TRUE to also test the selected modules as ONE pooled set (union of their regions for GREAT, union of their genes for clusterProfiler/Enrichr). Useful when single modules have too few genes [default %default]."),
+  make_option("--pool_name", type = "character", default = "pooled",
+              help = "Name of the pooled set in output files and plots [default %default]."),
+  make_option("--pool_only", type = "character", default = "FALSE",
+              help = "With --pool_modules TRUE: TRUE = test only the pooled set; FALSE = pooled set plus each module [default %default]."),
   make_option("--enrichr_dbs", type = "character",
               default = "GO_Biological_Process_2025,GO_Molecular_Function_2025,GO_Cellular_Component_2025,KEGG_2021_Human,Reactome_Pathways_2024,MSigDB_Hallmark_2020,GWAS_Catalog_2025",
               help = "Comma-separated Enrichr libraries; validated against Enrichr's current list [default %default]."),
@@ -145,7 +151,8 @@ to_bool <- function(x, nm) {
   if (v %in% c("FALSE", "F", "0", "NO", "N")) return(FALSE)
   stop("--", nm, " must be TRUE or FALSE (got '", x, "')", call. = FALSE)
 }
-for (nm in c("build_gene_set_cache_only", "do_great", "do_clusterprofiler", "do_enrichr", "use_enrichr_background")) {
+for (nm in c("build_gene_set_cache_only", "do_great", "do_clusterprofiler", "do_enrichr", "use_enrichr_background",
+            "pool_modules", "pool_only")) {
   opt[[nm]] <- to_bool(opt[[nm]], nm)
 }
 
@@ -398,10 +405,32 @@ if (!exists("enrichr_list_dbs", mode = "function")) {
   enrichr_list_dbs <- function() { init_enrichr(); enrichR::listEnrichrDbs() }
 }
 if (!exists("enrichr_query", mode = "function")) {
+  # One library per call. enrichR's background mode errors with
+  # "'names' attribute [9] must be the same length as the vector [0]" when a
+  # library returns no terms (common for short gene lists); querying all
+  # libraries together lets that one empty library sink the whole module.
+  # An empty library is recorded as zero rows; other errors are re-raised
+  # only if every library fails.
   enrichr_query <- function(genes, dbs, background = NULL) {
     init_enrichr()
-    if (is.null(background)) enrichR::enrichr(genes = genes, databases = dbs)
-    else enrichR::enrichr(genes = genes, databases = dbs, background = background, include_overlap = TRUE)
+    out <- list(); errs <- character(0)
+    for (db in dbs) {
+      r <- tryCatch({
+        if (is.null(background)) enrichR::enrichr(genes = genes, databases = db)
+        else enrichR::enrichr(genes = genes, databases = db, background = background, include_overlap = TRUE)
+      }, error = function(e) e)
+      if (inherits(r, "error")) {
+        msg <- conditionMessage(r)
+        if (grepl("'names' attribute .* vector \\[0\\]", msg)) {
+          out[[db]] <- data.frame()          # no terms for this library
+        } else errs <- c(errs, paste0(db, ": ", msg))
+      } else if (length(r)) {
+        out[[db]] <- if (db %in% names(r)) r[[db]] else r[[1]]
+      } else out[[db]] <- data.frame()
+    }
+    if (!length(out) && length(errs)) stop(paste(errs, collapse = " | "))
+    if (length(errs)) attr(out, "lib_errors") <- errs
+    out
   }
 }
 
@@ -458,8 +487,13 @@ run_enrichr_module <- function(gene_symbols, background, dbs, out_prefix, mod_na
     }, error = function(e) log_fn("  WARNING Enrichr plot failed for ", nm, ": ", conditionMessage(e)))
   }
   if (n_rows > 0) openxlsx::saveWorkbook(wb, paste0(out_prefix, "_enrichr.xlsx"), overwrite = TRUE)
+  lib_errs <- attr(res, "lib_errors")
+  if (length(lib_errs)) log_fn("  WARNING Enrichr library errors for ", mod_name, ": ", paste(lib_errs, collapse = " | "))
+  n_empty <- sum(vapply(res, function(d) is.null(d) || nrow(d) == 0, logical(1)))
+  log_fn("  Enrichr ", mod_name, ": ", n_rows, " rows; ", length(res) - n_empty, "/", length(res), " libraries returned terms")
   Sys.sleep(sleep_time)
-  list(status = "ok", detail = paste0(n_rows, " rows across ", length(res), " libraries"))
+  list(status = "ok", detail = paste0(n_rows, " rows across ", length(res), " libraries (", n_empty, " with no terms)",
+                                      if (length(lib_errs)) paste0("; errors: ", paste(lib_errs, collapse = " | ")) else ""))
 }
 
 # ============================================================
@@ -533,6 +567,31 @@ run_enrichment_consensus <- function(annotation_dir, variant_label, dataset_stat
   L("selection: ", mode_sel, "; ", length(sel), " modules: ", paste(sel, collapse = ", "))
   if (length(sel) == 0) { L("No modules selected; nothing to do."); return(invisible(NULL)) }
 
+  # ---- optional pooled set: union of the selected modules ----
+  # test_regions = regions tested per set (module or pool); files$regions stays
+  # untouched because it also defines the GREAT background.
+  test_regions <- files$regions[files$regions$module %in% sel, , drop = FALSE]
+  if (opt$pool_modules) {
+    pool_nm <- gsub("[^A-Za-z0-9_.-]+", "_", opt$pool_name)
+    if (pool_nm %in% all_mods) pool_nm <- paste0(pool_nm, "_pool")
+    if (length(sel) < 2) L("WARNING: --pool_modules with ", length(sel), " module; pooled set = that module")
+    pool_reg <- test_regions; pool_reg$module <- pool_nm
+    pool_genes <- files$gene_list[files$gene_list$module %in% sel, , drop = FALSE]
+    pool_genes$module <- pool_nm
+    pool_genes <- pool_genes[!duplicated(pool_genes$gene_symbol), , drop = FALSE]
+    L("Pooled set '", pool_nm, "': ", length(sel), " modules, ", nrow(pool_reg), " regions, ",
+      nrow(pool_genes), " unique genes (", paste(sel, collapse = ", "), ")")
+    utils::write.table(data.frame(pool = pool_nm, module = sel), file.path(out_dir, paste0(pool_nm, "_members.tsv")),
+                       sep = "\t", quote = FALSE, row.names = FALSE)
+    write_lines_safe(sort(unique(pool_genes$gene_symbol)), file.path(out_dir, paste0(pool_nm, "_genes.txt")))
+    if (opt$pool_only) {
+      test_regions <- pool_reg; sel <- pool_nm
+    } else {
+      test_regions <- rbind(test_regions, pool_reg); sel <- c(pool_nm, sel)
+    }
+    files$gene_list <- rbind(files$gene_list, pool_genes)
+  }
+
   overview <- list()
 
   # ---- GREAT ----
@@ -547,11 +606,10 @@ run_enrichment_consensus <- function(annotation_dir, variant_label, dataset_stat
     tables <- list()
     if (opt$great_engine == "fast") {
       prep <- great_fast_prepare(extended_tss, bg_gr, great_sets, opt$min_gene_set_size, opt$max_gene_set_size)
-      tables <- great_fast_test(prep, split(files$regions[files$regions$module %in% sel, ],
-                                            files$regions$module[files$regions$module %in% sel]))
+      tables <- great_fast_test(prep, split(test_regions, test_regions$module))
     } else {
       for (m in sel) {
-        tables[[m]] <- tryCatch(run_great_rgreat(files$regions[files$regions$module == m, ], bg_gr, great_sets,
+        tables[[m]] <- tryCatch(run_great_rgreat(test_regions[test_regions$module == m, ], bg_gr, great_sets,
                                                  extended_tss, opt$min_gene_set_size),
                                 error = function(e) { L("  ERROR GREAT ", m, ": ", conditionMessage(e)); NULL })
       }

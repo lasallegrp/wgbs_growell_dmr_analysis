@@ -201,7 +201,7 @@ if (!file.exists(helper_file)) {
 
 source(helper_file)
 
-required_helpers <- c("write_vector_file", "write_log_lines")
+required_helpers <- c("write_vector_file", "write_log_lines", "module_gene_labels")
 missing_helpers <- required_helpers[!vapply(required_helpers, exists, logical(1), mode = "function")]
 if (length(missing_helpers) > 0) {
   stop("Missing helper functions in helper.R: ", paste(missing_helpers, collapse = ", "))
@@ -575,6 +575,9 @@ make_dot_plot <- function(plot_df, modules_ordered, traits_ordered, dataset_labe
   p <- p +
     scale_y_discrete(
       limits = rev(modules_ordered), drop = FALSE,
+      # "GENES (module)" when --gene_assoc_file / --module_gene_file is given
+      labels = function(x) { if (is.null(module_axis_labels)) return(x)
+                             l <- module_axis_labels[x]; ifelse(is.na(l), x, l) },
       # Reserve fixed headroom (in row-units, independent of n_modules) above
       # the top row so the group-block labels never collide with the facet
       # strip text, regardless of how many modules are plotted.
@@ -760,6 +763,22 @@ option_list <- list(
                            "traits that actually apply to that timepoint -- matches what the",
                            "per-timepoint plots already do. With no timepoint-restricted",
                            "traits, aligned and compact produce identical output.")),
+
+  make_option("--gene_assoc_file", type = "character", default = NULL,
+              help = paste("Region_Gene_Associations.tsv from script 15 (or Annotated_Regions.tsv) --",
+                           "labels each module row with its top genes, e.g. 'MCU, MICU1 (lightcyan1)'.")),
+  make_option("--module_gene_file", type = "character", default = NULL,
+              help = "Manual module labels: TSV/CSV with columns module, genes. Overrides --gene_assoc_file per module."),
+  make_option("--kme_file", type = "character", default = NULL,
+              help = "Script 11 module membership table; ranks genes by hub status (max kME) instead of region count."),
+  make_option("--kme_source", type = "character", default = "primary",
+              help = paste("Hub-gene labels from script 11 kME, found automatically for each dataset:",
+                           "primary = dataset1's file, mean = mean kME over all datasets, none = rank by",
+                           "region count. Ignored when --kme_file is given. [default = primary]")),
+  make_option("--kme_dir", type = "character", default = NULL,
+              help = "Root of script 11 output [default: <project_root>/comethyl_output/consensus/11_consensus_membership]."),
+  make_option("--top_n_genes", type = "integer", default = 2,
+              help = "Genes shown per module label [default = 2]."),
 
   make_option("--save_preview_png", type = "logical", default = TRUE),
   make_option("--preview_dpi", type = "double", default = 200)
@@ -986,7 +1005,30 @@ message("(criterion: p < ", opt$p_thresh, " in >= ", opt$min_timepoints_replicat
         if (isTRUE(opt$require_consistent_direction)) ", consistent direction)" else ")")
 
 write_vector_file(modules_ordered, file.path(step_dir, paste0(selection_trait_category, "_robust_modules.txt")))
-readr::write_tsv(module_summary, file.path(step_dir, paste0(selection_trait_category, "_robust_module_summary.tsv")))
+
+# ------------------------------------------------------------
+# Optional gene labels for module rows ("MCU, MICU1 (lightcyan1)")
+# ------------------------------------------------------------
+module_axis_labels <- NULL
+if (!is.null(opt$gene_assoc_file) || !is.null(opt$module_gene_file)) {
+  kme_use <- opt$kme_file
+  kme_source <- match.arg(tolower(opt$kme_source), c("primary", "mean", "none"))
+  if (is.null(kme_use) && kme_source != "none") {
+    kf <- find_kme_files(opt$project_root, cpg_label, region_label, opt$adjustment_version,
+                         if (kme_source == "primary") dataset_labels[1] else dataset_labels, kme_dir = opt$kme_dir)
+    if (length(kf)) kme_use <- paste(kf, collapse = ",") else message("No kME files found; module genes ranked by region count.")
+  }
+  gene_lab <- module_gene_labels(modules_ordered, gene_assoc_file = opt$gene_assoc_file,
+                                 module_gene_file = opt$module_gene_file, kme_file = kme_use,
+                                 top_n = opt$top_n_genes)
+  module_axis_labels <- setNames(paste0(gene_lab$genes, " (", gene_lab$module, ")"), gene_lab$module)
+  readr::write_tsv(gene_lab, file.path(step_dir, "module_gene_labels.tsv"))
+  message("Module gene labels: ", paste(head(module_axis_labels, 5), collapse = "; "),
+          if (length(module_axis_labels) > 5) " ..." else "")
+}
+module_summary$genes <- if (is.null(module_axis_labels)) NA_character_ else
+  sub(" \\([^()]*\\)$", "", module_axis_labels[module_summary$module])
+readr::write_tsv(module_summary, file.path(step_dir, paste0(selection_trait_category, "_robust_module_summary.tsv")))  # now includes a genes column
 
 
 # ------------------------------------------------------------
@@ -1323,6 +1365,12 @@ write_log_lines(
     paste("font_size:", opt$font_size),
     paste("full_width_mm:", opt$full_width_mm),
     paste("row_height_in:", opt$row_height_in),
+    paste("gene_assoc_file:", ifelse(is.null(opt$gene_assoc_file), "", opt$gene_assoc_file)),
+    paste("module_gene_file:", ifelse(is.null(opt$module_gene_file), "", opt$module_gene_file)),
+    paste("kme_file:", ifelse(is.null(opt$kme_file), "", opt$kme_file)),
+    paste("kme_source:", opt$kme_source),
+    paste("kme_files_used:", if (exists("kme_use") && !is.null(kme_use)) kme_use else ""),
+    paste("top_n_genes:", opt$top_n_genes),
     paste("date:", as.character(Sys.time()))
   ),
   file.path(step_dir, "run_parameters.txt")

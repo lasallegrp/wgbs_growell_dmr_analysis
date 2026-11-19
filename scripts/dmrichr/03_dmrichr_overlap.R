@@ -158,8 +158,11 @@ opt <- parse_args(OptionParser(option_list = list(
               help = "Map GWAS and DMRichR gene symbols to current symbols via org.Hs.eg.db [default %default]"),
   make_option("--gwas_expand_readthrough", type = "logical", default = TRUE,
               help = "Also credit read-through GWAS genes (A-B-C) to each component gene, when every part is a current symbol [default %default]"),
+  make_option("--gwas_count_by", type = "character", default = "publications",
+              help = paste("Per-gene GWAS evidence used for labels and ranking: publications (PubMed IDs),",
+                           "studies (GWAS Catalog accessions), snps, traits or associations (rows) [default %default]")),
   make_option("--gwas_upset_genes", type = "integer", default = 10L,
-              help = "Gene names per bar on the outcomes + GWAS UpSet, ranked by n associations [default %default]"),
+              help = "Gene names per bar on the outcomes + GWAS UpSet, ranked by --gwas_count_by [default %default]"),
   make_option("--gwas_plot_max", type = "integer", default = 60L,
               help = "Max genes on the GWAS evidence plots [default %default]"),
   make_option("--helper", type = "character", default = NA, help = "Path to helper_overlap.R")
@@ -349,6 +352,11 @@ if (!is.na(opt$gene_set)) {
   dir.create(gw_dir, recursive = TRUE, showWarnings = FALSE)
   gin <- read_gwas_input(opt$gene_set, opt$gwas_max_p)
   gwas <- build_gwas_gene_set(gin, opt$harmonize_symbols, opt$gwas_expand_readthrough)
+  gw_count_col <- gwas_count_col(opt$gwas_count_by)                 # validates the option
+  gwas$genes$n_count <- gwas_count(gwas$genes, opt$gwas_count_by)
+  gw_count_lab <- if (all(is.na(gwas$genes[[gw_count_col]]))) "associations" else opt$gwas_count_by
+  gwas$genes <- gwas$genes[order(-gwas$genes$n_count, gwas$genes$min_p, gwas$genes$geneSymbol), ]
+  message("  GWAS genes labelled and ranked by n ", gw_count_lab)
   message("\n", opt$gwas_label, " gene set: ", nrow(gwas$genes), " genes",
           if (!is.null(gwas$long)) paste0(" from ", length(unique(gwas$long$assoc_id)), " associations, ",
                                          length(unique(gwas$long$study)), " studies, ",
@@ -366,7 +374,7 @@ if (!is.na(opt$gene_set)) {
 
   # gene table of some DMR sets (harmonized symbols) + a GWAS column. GWAS genes are restricted
   # to the sets' background genes; the GWAS-only bar is never drawn. If file is given, draws the
-  # UpSet: bars that include GWAS are labelled "GENE (n associations)", ranked by n associations.
+  # UpSet: bars that include GWAS are labelled "GENE (n)", ranked by n (--gwas_count_by).
   gwas_upset <- function(sids, file = NULL, title = "", cols = NULL) {
     sep <- if (is.na(opt$gene_sep)) NA else opt$gene_sep
     dlh <- lapply(dmrs[sids], function(d) { d$.gene <- harmonize_gene_col(d$.gene, H, sep); d })
@@ -378,14 +386,14 @@ if (!is.na(opt$gene_set)) {
     gth[[paste0("dir_", gw_label)]] <- NA_character_
     gth$pattern <- ifelse(isg, paste(gth$pattern, gw_label, sep = "&"), gth$pattern)
     gth$n_sets <- gth$n_sets + isg
-    na <- gwas$genes$n_associations[match(gth$geneSymbol, gwas$genes$geneSymbol)]
+    na <- gwas$genes$n_count[match(gth$geneSymbol, gwas$genes$geneSymbol)]
     if (!is.null(file)) {
       alld <- do.call(rbind, lapply(dlh, function(d) d[!is.na(d$.gene), c(".gene", ".effect")]))
       eff <- tapply(abs(alld$.effect), alld$.gene, max)[gth$geneSymbol]
       gth$label_gene <- ifelse(isg, paste0(gth$geneSymbol, " (", na, ")"), gth$geneSymbol)
       if (is.null(cols)) cols <- setNames(rep("grey15", length(sids)), sids)
       plot_upset_labeled(gth, c(sids, gw_label), file,
-                         paste0(title, " (", length(gg), " ", opt$gwas_label, " genes in universe); labels: gene (n associations)"),
+                         paste0(title, " (", length(gg), " ", opt$gwas_label, " genes in universe); labels: gene (n ", gw_count_lab, ")"),
                          gene_col = "label_gene", score = ifelse(isg, na, eff),
                          n_genes = opt$gwas_upset_genes, scope = "multi", highlight = NULL,
                          require_direction = FALSE,
@@ -397,7 +405,7 @@ if (!is.na(opt$gene_set)) {
 
   gs_res <- bind_rows_any(lapply(man$set_id, function(s) {
     if (is.null(set_univ[[s]])) { message("  ", s, ": no background genes -> gene-set test skipped"); return(NULL) }
-    cbind(set_id = s, dimcols(s), gene_set_enrichment_one(set_genes[[s]], set_univ[[s]], gwas$genes))
+    cbind(set_id = s, dimcols(s), gene_set_enrichment_one(set_genes[[s]], set_univ[[s]], gwas$genes, "n_count"))
   }))
   if (nrow(gs_res)) {
     gs_res$fisher_FDR_run    <- p.adjust(gs_res$fisher_p, "BH")
@@ -415,12 +423,12 @@ if (!is.na(opt$gene_set)) {
     names(ev_all)[names(ev_all) == "dir"] <- "dmr_direction"
     merge(ev_all, gwas$genes, by = "geneSymbol", all.x = TRUE)
   } else data.frame()
-  if (nrow(ov_genes)) ov_genes <- ov_genes[order(-ov_genes$n_associations, ov_genes$geneSymbol, ov_genes$set_id), ]
+  if (nrow(ov_genes)) ov_genes <- ov_genes[order(-ov_genes$n_count, ov_genes$min_p, ov_genes$geneSymbol, ov_genes$set_id), ]
   if (nrow(ev_all)) {
     names(ev_all)[names(ev_all) == "dmr_direction"] <- "dir"; ev_all$set <- ev_all$set_id
     plot_gwas_evidence(ev_all, gwas$genes, man$set_id, file.path(gw_dir, paste0(gw_label, "_gene_evidence.pdf")),
                        paste0(opt$gwas_label, " genes among DMR genes"), opt$gwas_plot_max, opt$gwas_label,
-                       set_groups = man$contrast)
+                       set_groups = man$contrast, count_col = "n_count", count_label = gw_count_lab)
   }
   # outcomes + GWAS UpSets, one per outcome (across timepoints) and one per timepoint
   # (across outcomes); written to gwas/upset/
@@ -810,7 +818,7 @@ for (gname in names(groups)) {
         gu <- gwas_upset(sets)
         if (!is.null(gu) && any(gu$isg)) {
           gw_sheet <- merge(gu$tab[gu$isg, c("geneSymbol", "pattern", paste0("dir_", sets))], gwas$genes, by = "geneSymbol")
-          gw_sheet <- gw_sheet[order(-gw_sheet$n_associations), ]
+          gw_sheet <- gw_sheet[order(-gw_sheet$n_count, gw_sheet$min_p), ]
         }
       }
       write_xlsx_safe(c(list(Patterns = pcg, Pairwise = pwg, Genes = gt, GWAS_genes = gw_sheet), per_pat),

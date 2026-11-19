@@ -41,10 +41,11 @@ pixi run Rscript -e 'cat("R home: ", R.home(), "\n"); sessionInfo()'
 # Convenience variables
 # ================================================================
 PROJECT=/quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George
-SCRIPTS=$PROJECT/scripts/comethyl_scripts/consensus
+SCRIPTS=$PROJECT/scripts/comethyl/comethyl_scripts/consensus
 DATA=$PROJECT/data/metadata/comethyl
 CONFIG=$PROJECT/config/comethyl
 OUT=$PROJECT/comethyl_output/consensus
+SETS=$PROJECT/config/comethyl/enrichment_sets
 
 # Reference filter labels (derived from scripts 01 and 02)
 CPG_LABEL=cov3_75pct
@@ -490,7 +491,7 @@ REGION_LABEL=covMin14_methSD0p06 #covMin14_methSD0p06 covMin10_methSD0p09
 #   --max_p_outliers 0.1
 
 # v2
-pixi run Rscript $SCRIPTS/12a_me_trait_analysis_consensus.R \
+pixi run Rscript /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/scripts/comethyl/comethyl_scripts/consensus/12a_me_trait_analysis_consensus.R \
   --project_root $PROJECT \
   --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/Consensus_Modules.rds \
   --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
@@ -560,30 +561,30 @@ pixi run Rscript $SCRIPTS/12a_me_trait_analysis_consensus.R \
 #   --top_width 9 \
 #   --top_height 6
 
-# # v2
-# pixi run Rscript $SCRIPTS/12b_me_trait_presentation_consensus.R \
-#   --project_root $PROJECT \
-#   --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/Consensus_Modules.rds \
-#   --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
-#   --adjustment_version v2_exclude_protected_pcs \
-#   --dataset1_label Baseline \
-#   --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
-#   --dataset2_label 36-38wk \
-#   --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
-#   --dataset3_label Postpartum \
-#   --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
-#   --set_dir $CONFIG/presentation_sets \
-#   --module_order_mode exposure_outcome \
-#   --module_order_trait_file /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/analysis/config/comethyl/module_ordering/exposure_outcome_traits.tsv \
-#   --trait_order_mode exposure_outcome \
-#   --module_dendro_distance bicor \
-#   --min_sig_traits 1 \
-#   --p_thresh 0.05 \
-#   --top_n 50 \
-#   --full_width 12 \
-#   --full_height 7 \
-#   --top_width 9 \
-#   --top_height 6
+# v2
+pixi run Rscript $SCRIPTS/12b_me_trait_presentation_consensus.R \
+  --project_root $PROJECT \
+  --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/Consensus_Modules.rds \
+  --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
+  --adjustment_version v2_exclude_protected_pcs \
+  --dataset1_label Baseline \
+  --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --dataset2_label 36-38wk \
+  --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --dataset3_label Postpartum \
+  --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --set_dir $CONFIG/presentation_sets \
+  --module_order_mode exposure_outcome \
+  --module_order_trait_file /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/analysis/config/comethyl/module_ordering/exposure_outcome_traits.tsv \
+  --trait_order_mode exposure_outcome \
+  --module_dendro_distance bicor \
+  --min_sig_traits 1 \
+  --p_thresh 0.05 \
+  --top_n 50 \
+  --full_width 12 \
+  --full_height 7 \
+  --top_width 9 \
+  --top_height 6
 
 # ================================================================
 # SCRIPT 12C: Exposure-first presentation dot plots
@@ -595,24 +596,6 @@ pixi run Rscript $SCRIPTS/12a_me_trait_analysis_consensus.R \
 # Output: $OUT/12c_me_trait_exposure_first_dotplots/$CPG_LABEL/$REGION_LABEL/<adjustment_version>/
 # ================================================================
 #old version commented out below in 12c script
-# # v2
-# pixi run Rscript $SCRIPTS/12c_me_trait_exposure_first_dotplots_consensus.R \
-#   --project_root $PROJECT \
-#   --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
-#   --adjustment_version v2_exclude_protected_pcs \
-#   --dataset1_label Baseline \
-#   --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
-#   --dataset2_label 36-38wk \
-#   --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
-#   --dataset3_label Postpartum \
-#   --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
-#   --exposure_outcome_trait_file /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/analysis/config/comethyl/module_ordering/exposure_outcome_traits.tsv \
-#   --p_thresh 0.05 \
-#   --min_timepoints_replicated 2 \
-#   --require_consistent_direction TRUE \
-#   --drop_empty_columns TRUE \
-#   --color_limit 0.6
-
 # # v2
 # pixi run Rscript /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/scripts/comethyl/comethyl_scripts/consensus/12c_me_trait_exposure_first_dotplots_consensus.R \
 #   --project_root $PROJECT \
@@ -632,6 +615,87 @@ pixi run Rscript $SCRIPTS/12a_me_trait_analysis_consensus.R \
 #   --color_limit 0.6 \
 #   --panel_layout horizontal \
 #   --per_timepoint_plots TRUE
+
+#  v2 New
+pixi run Rscript /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/scripts/comethyl/comethyl_scripts/consensus/12c_me_trait_exposure_first_dotplots_consensus.R \
+  --project_root $PROJECT \
+  --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
+  --adjustment_version v2_exclude_protected_pcs \
+  --dataset1_label Baseline \
+  --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --dataset2_label 36-38wk \
+  --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --dataset3_label Postpartum \
+  --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --exposure_outcome_trait_file $CONFIG/module_ordering/exposure_outcome_traits.tsv \
+  --p_thresh 0.05 \
+  --min_timepoints_replicated 2 \
+  --require_consistent_direction FALSE \
+  --drop_empty_columns TRUE \
+  --color_limit 0.6 \
+  --panel_layout horizontal \
+  --per_timepoint_plots TRUE \
+  --gene_assoc_file $OUT/15_module_annotation/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/Region_Gene_Associations.tsv \
+  --top_n_genes 2
+
+
+# ================================================================
+# SCRIPT 12D: Outcome-group module dot plot (fellowship Figure 1)
+# Panel b: modules grouped by which outcome groups they hit
+#   (PPWR only / PPWR and GWG / BMI only ...), primary = Baseline,
+#   thick outline = p < 0.05 in >= 2 timepoints (any direction).
+# Panel a: Spearman correlations between the traits (--sample_info).
+# Output: comethyl_output/consensus/12d_outcome_group_dotplot/$CPG_LABEL/$REGION_LABEL/<adj>/Baseline/
+# ================================================================
+# v2
+pixi run Rscript /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/scripts/comethyl/comethyl_scripts/consensus/12d_Outcome_group_module_dot_plot.R \
+  --project_root $PROJECT \
+  --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
+  --adjustment_version v2_exclude_protected_pcs \
+  --dataset1_label Baseline \
+  --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --dataset2_label 36-38wk \
+  --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --dataset3_label Postpartum \
+  --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --primary_dataset Baseline \
+  --trait_group_file $CONFIG/module_ordering/ppwr_trait_groups.tsv \
+  --focus_group PPWR \
+  --primary_trait ppwr_6m \
+  --p_thresh 0.05 \
+  --replication_min 2 \
+  --replication_direction any \
+  --color_limit 0.6 \
+  --gene_assoc_file $OUT/15_module_annotation/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/Region_Gene_Associations.tsv \
+  --top_n_genes 2 \
+  --highlight_modules lightcyan1 \
+  --sample_info /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/data/metadata/comethyl/sample_info_baseline.xlsx
+# # ================================================================
+# SCRIPT 12F: Split-cell heatmaps (same modules and rules as 12c)
+# ================================================================
+# v2
+pixi run Rscript $SCRIPTS/12f_split_cell_heatmap_consensus.R \
+  --project_root $PROJECT \
+  --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
+  --adjustment_version v2_exclude_protected_pcs \
+  --dataset1_label Baseline \
+  --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --dataset2_label 36-38wk \
+  --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --dataset3_label Postpartum \
+  --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --dataset_short_labels B,36,PP \
+  --dataset_long_labels "10-16 wk,36-38 wk,3 mo postpartum" \
+  --column_file $CONFIG/module_ordering/split_cell_columns_match12c.tsv \
+  --p_thresh 0.05 \
+  --min_timepoints 2 \
+  --replication_direction any \
+  --color_limit 0.6 \
+  --max_rows_per_block 100 \
+  --panel_rows shared \
+  --gene_assoc_file $OUT/15_module_annotation/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/Region_Gene_Associations.tsv \
+  --highlight_modules "lightcyan1,thistle2,coral3"
+
 # ================================================================
 # SCRIPT 13: Circos plots and module summaries
 
@@ -699,7 +763,33 @@ pixi run Rscript $SCRIPTS/12a_me_trait_analysis_consensus.R \
 #   --cat_plot_style violin \
 #   --only_significant TRUE \
 #   --p_thresh 0.05
+PROJECT=/quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George
+OUT=$PROJECT/comethyl_output/consensus
+CONFIG=$PROJECT/config/comethyl
+SCRIPTS=$PROJECT/scripts/comethyl/comethyl_scripts/consensus
+META=$PROJECT/data/metadata/comethyl
+CPG_LABEL=cov3_75pct
+REGION_LABEL=covMin14_methSD0p06
+ADJ=v2_exclude_protected_pcs
 
+pixi run Rscript $SCRIPTS/14b_me_trait_pairs_across_timepoints_consensus.R \
+  --project_root $PROJECT \
+  --consensus_modules_rds $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/$ADJ/Consensus_Modules.rds \
+  --regions_file $OUT/02_reference_region_filter/Baseline/$CPG_LABEL/$REGION_LABEL/Filtered_Regions.txt \
+  --adjustment_version $ADJ \
+  --dataset1_label Baseline \
+  --dataset1_sample_info $META/sample_info_baseline.xlsx \
+  --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/$ADJ/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --dataset2_label 36-38wk \
+  --dataset2_sample_info $META/sample_info_36_38wk.xlsx \
+  --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/$ADJ/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --dataset3_label Postpartum \
+  --dataset3_sample_info $META/sample_info_postpartum.xlsx \
+  --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/$ADJ/ME_Trait_Correlation_Stats_Bicor.tsv \
+  --dataset_long_labels "10-16 wk,36-38 wk,3 mo postpartum" \
+  --auto TRUE --traits ppwr_6m,ppwr_e_6m,ppwr_3m,ppwr_e_3m \
+  --trait_label_file $CONFIG/module_ordering/ppwr_trait_groups.tsv \
+  --gene_assoc_file $OUT/15_module_annotation/$CPG_LABEL/$REGION_LABEL/$ADJ/Region_Gene_Associations.tsv
 # ================================================================
 # SCRIPT 15: Module annotation
 
@@ -720,6 +810,7 @@ pixi run Rscript $SCRIPTS/12a_me_trait_analysis_consensus.R \
 #   --adjustment_version v2_exclude_protected_pcs \
 #   --genome hg38 \
 #   --annotation_mode auto
+SETS=$PROJECT/config/comethyl/enrichment_sets
 
 # v2
 pixi run Rscript /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/scripts/comethyl/comethyl_scripts/consensus/15_Annotate_modules_consensus.R \
@@ -729,6 +820,15 @@ pixi run Rscript /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_Georg
   --genome hg38 \
   --annotatr_cache /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/reference/annotatr_hg38.rds
 #  --plot_modules yellow,brown          # optional
+
+# v2 with enrichment sets
+pixi run Rscript $SCRIPTS/15_Annotate_modules_consensus.R \
+  --project_root $PROJECT \
+  --consensus_regions_tsv $OUT/09_consensus_modules/shared/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/Consensus_Region_Assignments.tsv \
+  --adjustment_version v2_exclude_protected_pcs \
+  --genome hg38 \
+  --annotatr_cache $PROJECT/reference/annotatr_hg38.rds \
+  --plot_module_sets $SETS/PPWR_all3_timepoints.txt,$SETS/PPWR_modules.txt
 # ================================================================
 # SCRIPT 16: Module enrichment
 
@@ -782,20 +882,56 @@ pixi run Rscript /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_Georg
 #   --plot_p_col p.adjust \
 #   --plot_sig_cutoff 0.05
 
-# v2
-pixi run Rscript /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/scripts/comethyl/comethyl_scripts/consensus/16_enrichr_selected_modules.R \
+# # v2
+# pixi run Rscript /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/scripts/comethyl/comethyl_scripts/consensus/16_enrichr_selected_modules.R \
+#   --project_root $PROJECT \
+#   --annotation_dir $OUT/15_module_annotation/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs \
+#   --adjustment_version v2_exclude_protected_pcs \
+#   --gene_set_cache /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/reference/gene_sets_hg38.rds \
+#   --trait_list_file $CONFIG/presentation_sets \
+#   --dataset1_label Baseline \
+#   --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+#   --dataset2_label 36-38wk \
+#   --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+#   --dataset3_label Postpartum \
+#   --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
+#   --p_thresh 0.05 \
+#   --enrichr_retries 5 \
+#   --enrichr_sleep 2 \
+#   --plot_top_n 10 \
+#   --plot_p_col p.adjust \
+#   --plot_sig_cutoff 0.05
+
+# SETS=/quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/config/comethyl/enrichment_sets
+
+# printf '%s\n' blue4 coral3 darkviolet lightcyan1 lightpink4 orangered1 plum1 plum2 salmon2 skyblue thistle thistle2 white yellow4 \
+#   > $SETS/PPWR_modules.txt
+# printf '%s\n' lightcyan1 thistle2 coral3 > $SETS/PPWR_all3_timepoints.txt
+# ls $SETS; wc -l $SETS/*.txt          # expect 14 and 3
+
+# pixi run Rscript /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/scripts/comethyl/comethyl_scripts/consensus/16_enrichr_selected_modules.R \
+#   --project_root $PROJECT \
+#   --annotation_dir $OUT/15_module_annotation/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs \
+#   --adjustment_version v2_exclude_protected_pcs \
+#   --gene_set_cache /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/reference/gene_sets_hg38.rds \
+#   --module_list_file $SETS \
+#   --enrichr_retries 5 \
+#   --enrichr_sleep 2 \
+#   --plot_top_n 5 \
+#   --plot_p_col p.adjust \
+#   --plot_sig_cutoff 0.05
+
+
+SETS=$PROJECT/config/comethyl/enrichment_sets
+
+pixi run Rscript $SCRIPTS/16_enrichr_selected_modules.R \
   --project_root $PROJECT \
   --annotation_dir $OUT/15_module_annotation/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs \
   --adjustment_version v2_exclude_protected_pcs \
-  --gene_set_cache /quobyte/lasallegrp/projects/GROWELL/WGBS/2025_DBS_dmrich_George/reference/gene_sets_hg38.rds \
-  --trait_list_file $CONFIG/presentation_sets \
-  --dataset1_label Baseline \
-  --dataset1_stats_file $OUT/12a_me_trait_analysis/Baseline/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
-  --dataset2_label 36-38wk \
-  --dataset2_stats_file $OUT/12a_me_trait_analysis/36-38wk/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
-  --dataset3_label Postpartum \
-  --dataset3_stats_file $OUT/12a_me_trait_analysis/Postpartum/$CPG_LABEL/$REGION_LABEL/v2_exclude_protected_pcs/ME_Trait_Correlation_Stats_Bicor.tsv \
-  --p_thresh 0.05 \
+  --gene_set_cache $PROJECT/reference/gene_sets_hg38.rds \
+  --module_list_file $SETS \
+  --pool_modules TRUE \
+  --pool_name PPWR_pooled \
   --enrichr_retries 5 \
   --enrichr_sleep 2 \
   --plot_top_n 10 \
