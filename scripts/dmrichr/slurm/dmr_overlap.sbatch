@@ -70,7 +70,7 @@ echo "Start time: $(date)"
 PROJECT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
 PROJECT_DIR="$(cd "${PROJECT_DIR}" && pwd)"
 
-SCRIPT_DIR="${SCRIPT_DIR:-${PROJECT_DIR}/scripts/DMRichr}"      # 03_dmrichr_overlap.R + helper_overlap.R
+SCRIPT_DIR="${SCRIPT_DIR:-${PROJECT_DIR}/scripts/dmrichr}"      # 03_dmrichr_overlap.R + helper_overlap.R
 OVERLAP_SCRIPT="${SCRIPT_DIR}/03_dmrichr_overlap.R"
 HELPER="${SCRIPT_DIR}/helper_overlap.R"
 RESULTS_DIR="${RESULTS_DIR:-${PROJECT_DIR}/results/dmrichr_output}"   # holds <outcome>/<timepoint>/
@@ -106,6 +106,7 @@ PER_OVERLAP_FOLDERS="${PER_OVERLAP_FOLDERS:-TRUE}"  # each overlap's annotated D
 UPSET_GENES="${UPSET_GENES:-5}"                     # gene names per bar on the coloured UpSet (0 = none)
 UPSET_GENES_SCOPE="${UPSET_GENES_SCOPE:-multi}"     # multi = overlap bars only | all
 UPSET_HIGHLIGHT_GENES="${UPSET_HIGHLIGHT_GENES:-}"  # optional gene list file; only these get labeled
+FIG_STYLE="${FIG_STYLE:-poster}"                   # default | paper | poster
 
 # regioneR permutation test (coord mode)
 PERM_TEST="${PERM_TEST:-0}"                         # 1 = run
@@ -143,6 +144,7 @@ RUN_TAG="${RUN_TAG:-all_outcomes}"
 [[ "${MIN_OVERLAP_BP}" != "1" ]]     && RUN_TAG="${RUN_TAG}_minov${MIN_OVERLAP_BP}"
 [[ "${PERM_TEST}" == "1" ]]          && RUN_TAG="${RUN_TAG}_perm${PERM_N}_${PERM_RANDOMIZE}"
 [[ -n "${GENE_SET}${SNP_SET}" ]]     && RUN_TAG="${RUN_TAG}_gwas-${GWAS_LABEL}"
+[[ "${FIG_STYLE}" != "default" ]] && RUN_TAG="${RUN_TAG}_${FIG_STYLE}"
 OUTDIR="${OUTDIR:-${RESULTS_DIR}/DMRichR_overlap/${RUN_TAG}}"
 mkdir -p "${OUTDIR}"
 
@@ -156,7 +158,7 @@ export PATH="${PIXI_HOME}/bin:${PATH}"
 export PIXI_CACHE_DIR="/tmp/${USER}/pixi-cache"
 mkdir -p "${PIXI_CACHE_DIR}"
 
-PIXI_MANIFEST="${PIXI_MANIFEST:-${PROJECT_DIR}/reproducibility/pixi/pixi.toml}"
+PIXI_MANIFEST="${PIXI_MANIFEST:-${PROJECT_DIR}/reproducibility/dmrichr/pixi/pixi.toml}"
 
 if [[ ! -f "${PIXI_MANIFEST}" ]]; then
     echo "ERROR: Pixi manifest not found: ${PIXI_MANIFEST}" >&2
@@ -239,6 +241,7 @@ cmd=(pixi run --manifest-path "${PIXI_MANIFEST}" Rscript --vanilla \
     --per_overlap_folders "${PER_OVERLAP_FOLDERS}" \
     --upset_genes "${UPSET_GENES}" \
     --upset_genes_scope "${UPSET_GENES_SCOPE}" \
+    --fig_style "${FIG_STYLE}" \
     --out_dir "${OUTDIR}" )
 
 [[ -n "${OUTCOMES}" ]]              && cmd+=(--outcomes "${OUTCOMES}")

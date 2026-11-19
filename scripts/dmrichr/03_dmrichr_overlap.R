@@ -114,6 +114,8 @@ opt <- parse_args(OptionParser(option_list = list(
               help = "multi = label only overlap bars, all = label every bar [default %default]"),
   make_option("--upset_highlight_genes", type = "character", default = NA,
               help = "Optional gene list (one per line, or table with geneSymbol column); only these are labeled"),
+  make_option("--fig_style", type = "character", default = "default",
+              help = "Coloured UpSet sizing: default | paper (170 mm, 8 pt) | poster [default %default]"),
   make_option("--scatter_genes", type = "integer", default = 10L,
               help = "Gene names to label on the cross-sex scatter (config_sex only; 0 = off) [default %default]"),
   make_option("--subthreshold_p", type = "double", default = 0.2,
@@ -186,6 +188,15 @@ if (is.na(opt$out_dir)) {
 self <- if (length(.a)) normalizePath(sub("^--file=", "", .a[1])) else NA_character_
 if (is.na(opt$helper)) opt$helper <- file.path(dirname(self), "helper_overlap.R")
 source(opt$helper)
+# ==== FIGURE PRESETS (MODIFY numbers here; all sizes in pt except dots/inches) ====
+fig_presets <- list(
+  default = list(),                                       # empty = today's look 11/18/2026 check lab meeting 11/04/2026
+  paper   = list(upset_base_pt = 8,  upset_count_pt = 7.5, upset_gene_pt = 7,
+                 upset_dot_size = 2.6, upset_bar_in = 2.2, upset_width_in = 170 / 25.4),
+  poster  = list(upset_base_pt = 20, upset_count_pt = 18,  upset_gene_pt = 13,
+                 upset_dot_size = 6,   upset_bar_in = 3.5))
+if (!opt$fig_style %in% names(fig_presets)) stop("--fig_style must be one of: ", paste(names(fig_presets), collapse = ", "))
+options(fig_presets[[opt$fig_style]])   # plot_upset_labeled() reads these via getOption()
 stopifnot(opt$overlap_mode %in% c("coord", "gene", "both"))
 do_coord <- opt$overlap_mode %in% c("coord", "both")
 do_gene  <- opt$overlap_mode %in% c("gene", "both")

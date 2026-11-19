@@ -519,7 +519,18 @@ direction_class <- function(tab, sets) {
 
 plot_upset_labeled <- function(tab, sets, file, title, gene_col, score, n_genes = 5,
                                scope = "multi", highlight = NULL, require_direction = FALSE,
-                               set_sizes = NULL, set_cols = NULL) {
+                               set_sizes = NULL, set_cols = NULL,
+                               # getOption("x", fallback): value set by 03's --fig_style,
+                               base_pt  = getOption("upset_base_pt",  11),   # axis, set names, legend, title
+                               count_pt = getOption("upset_count_pt", 9.7),  # numbers on bars
+                               gene_pt  = getOption("upset_gene_pt",  7.7),  # gene names under bars
+                               dot_size = getOption("upset_dot_size", 3.8),  # matrix dots
+                               bar_in   = getOption("upset_bar_in",   3),    # height of bar panel, inches
+                               width_in = getOption("upset_width_in", NA)) { # NA = width from bar count
+
+# plot_upset_labeled <- function(tab, sets, file, title, gene_col, score, n_genes = 5,
+#                                scope = "multi", highlight = NULL, require_direction = FALSE,
+#                                set_sizes = NULL, set_cols = NULL) {
   t2 <- tab; sc <- score
   if (require_direction) {
     k <- t2$n_sets == 1 | t2$direction_concordant %in% TRUE
@@ -553,25 +564,25 @@ plot_upset_labeled <- function(tab, sets, file, title, gene_col, score, n_genes 
     data.frame(pattern = factor(p, lv), ymin = min(y), ymax = max(y))
   }))
 
-  th <- theme_minimal(11) + theme(panel.grid.major.x = element_blank(),
+  th <- theme_minimal(base_pt) + theme(panel.grid.major.x = element_blank(),
                                   panel.grid.minor = element_blank())
   sx <- scale_x_discrete(limits = lv, drop = FALSE)
   p_bar <- ggplot(stk, aes(pattern, Freq, fill = dir_class)) + geom_col(width = .7) +
-    geom_text(data = cnt, aes(pattern, Freq, label = Freq), inherit.aes = FALSE, vjust = -0.4, size = 3.4) +
+    geom_text(data = cnt, aes(pattern, Freq, label = Freq), inherit.aes = FALSE, vjust = -0.4, size = count_pt / .pt) +
     sx + scale_fill_manual(values = dir_pal, breaks = names(dir_pal), name = "Methylation direction") +
     scale_y_continuous(expand = expansion(mult = c(0, .12))) +
     labs(x = NULL, y = "Intersection size", title = title) +
     th + theme(axis.text.x = element_blank(), legend.position = c(.98, .95), legend.justification = c(1, 1),
                legend.background = element_rect(fill = "white", colour = NA))
   p_lab <- ggplot(cnt, aes(pattern, 1)) +
-    geom_text(aes(label = lab), vjust = 1, size = 2.7, fontface = "italic", lineheight = .9) +
+    geom_text(aes(label = lab), vjust = 1, size = gene_pt / .pt, fontface = "italic", lineheight = .9) +
     sx + scale_y_continuous(limits = c(0, 1), expand = c(0, 0)) +
     labs(x = NULL, y = NULL) + th +
     theme(axis.text = element_blank(), panel.grid = element_blank(), legend.position = "none")
   p_mat <- ggplot(mat, aes(pattern, y)) +
     { if (!is.null(seg)) geom_segment(data = seg, aes(x = pattern, xend = pattern, y = ymin, yend = ymax),
                                       inherit.aes = FALSE, linewidth = 1, colour = "grey40") } +
-    geom_point(colour = mat$col, size = 3.8) + sx +
+    geom_point(colour = mat$col, size = dot_size) + sx +
     scale_y_continuous(breaks = seq_along(sets), labels = rev(ylab_sets),
                        limits = c(.5, length(sets) + .5)) +
     labs(x = NULL, y = NULL) + th +
@@ -581,10 +592,13 @@ plot_upset_labeled <- function(tab, sets, file, title, gene_col, score, n_genes 
   g <- rbind(ggplotGrob(p_bar), ggplotGrob(p_lab), ggplotGrob(p_mat), size = "max")
   panels <- grep("^panel", g$layout$name)
   rows <- sort(unique(g$layout$t[panels]))
-  h_lab <- if (n_genes > 0) max(.6, .16 * n_lines) else .1
-  g$heights[rows] <- unit(c(3, h_lab, .35 * length(sets)), c("in", "in", "in"))
-  w <- max(6.5, 1.0 * length(lv) + 2.5)
-  pdf(file, width = w, height = 3 + h_lab + .35 * length(sets) + 1.4)
+
+  line_in <- 1.25 * gene_pt / 72                      # one gene-name line, in inches (72 pt = 1 in)
+  h_lab   <- if (n_genes > 0) max(.3, line_in * n_lines + .08) else .1
+  row_in  <- max(.18, 1.6 * base_pt / 72)             # one set row of dots
+  g$heights[rows] <- unit(c(bar_in, h_lab, row_in * length(sets)), c("in", "in", "in"))
+  w <- if (is.na(width_in)) max(6.5, 1.0 * length(lv) + 2.5) else width_in
+  pdf(file, width = w, height = bar_in + h_lab + row_in * length(sets) + 0.09 * base_pt + 0.4)
   grid::grid.newpage(); grid::grid.draw(g)
   dev.off()
 }
